@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(ExportService.self) private var exporter
@@ -8,6 +9,16 @@ struct SettingsView: View {
         RecordingContentPreference.current.rawValue
     @AppStorage(SummaryPreferences.enabledKey) private var summariesEnabled = false
     @State private var showFolderPicker = false
+    @State private var copiedSetupPrompt = false
+
+    /// Names the destination the user actually chose, so the pasted line
+    /// matches their setup rather than an example they have to translate.
+    private var setupPrompt: String {
+        if case .ready(let name) = exporter.folderState {
+            return SetupPrompt.text(destination: name)
+        }
+        return SetupPrompt.text(destination: nil)
+    }
     @State private var storageBytes: Int64 = 0
     @State private var showDeleteAudioConfirm = false
     @State private var supportedLanguages: [Locale] = []
@@ -51,6 +62,30 @@ struct SettingsView: View {
                 Text("Export")
             } footer: {
                 Text("Finished recordings are written here as markdown, within about five seconds of processing.")
+            }
+
+            Section {
+                Button {
+                    UIPasteboard.general.string = setupPrompt
+                    copiedSetupPrompt = true
+                } label: {
+                    Label(copiedSetupPrompt ? "Copied" : "Copy Setup Instructions",
+                          systemImage: copiedSetupPrompt ? "checkmark" : "doc.on.doc")
+                }
+                .disabled(!exporter.isConfigured)
+
+                ShareLink(item: setupPrompt) {
+                    Label("Share Setup Instructions", systemImage: "square.and.arrow.up")
+                }
+                .disabled(!exporter.isConfigured)
+            } header: {
+                Text("Your AI")
+            } footer: {
+                // Share, not a list of apps: iOS already shows exactly the
+                // assistants a person has installed, which is the honest way
+                // to find that out. Querying installed apps would be
+                // fingerprinting, and this app collects nothing.
+                Text("Hand this to Claude, ChatGPT, Gemini, or whatever you use. It points them at your folder and at the format, so they can answer questions across every meeting you have recorded.")
             }
 
             Section {
