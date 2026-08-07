@@ -11,9 +11,21 @@ struct ContentView: View {
     @Query(sort: \Recording.createdAt, order: .reverse) private var recordings: [Recording]
     @AppStorage("onboardingComplete") private var onboardingComplete = false
     @AppStorage("consentNoticeDismissed") private var consentDismissed = false
+    @AppStorage("setupPromptDismissed") private var setupPromptDismissed = false
     @State private var showFolderPicker = false
     @State private var micPermission = AVAudioApplication.shared.recordPermission
     @State private var searchText = ""
+
+    /// The setup card needs all three: a finished recording so there is a real
+    /// file to point at, a configured destination so the line can name it, and
+    /// no prior dismissal.
+    private var setupDestination: String? {
+        guard !setupPromptDismissed,
+              case .ready(let name) = exporter.folderState,
+              recordings.contains(where: { $0.status == .done })
+        else { return nil }
+        return name
+    }
 
     /// Filtered in memory rather than through a @Query predicate: the corpus
     /// is one person's recordings, and searching transcript text needs a
@@ -48,6 +60,11 @@ struct ContentView: View {
                             }
                             .font(.callout)
                         }
+                    }
+                }
+                if let destination = setupDestination {
+                    SetupPromptCard(destination: destination) {
+                        setupPromptDismissed = true
                     }
                 }
                 if !consentDismissed {

@@ -37,3 +37,33 @@ struct SetupPromptTests {
         #expect(SetupPrompt.text(destination: "iCloud Drive › OpenMinutes").count < 260)
     }
 }
+
+@Suite("Setup card visibility")
+struct SetupCardVisibilityTests {
+
+    /// Mirrors the three conditions ContentView checks, so the rule is
+    /// asserted somewhere rather than only living in a view body.
+    private func shows(dismissed: Bool, destination: String?, hasFinished: Bool) -> Bool {
+        !dismissed && destination != nil && hasFinished
+    }
+
+    /// Offering to connect an assistant to an empty folder asks someone to
+    /// configure a workflow for files that do not exist yet.
+    @Test func hiddenBeforeAnythingHasFinished() {
+        #expect(!shows(dismissed: false, destination: "iCloud Drive › OpenMinutes", hasFinished: false))
+    }
+
+    /// With no destination the line cannot name a folder, so there is
+    /// nothing useful to offer.
+    @Test func hiddenWithoutADestination() {
+        #expect(!shows(dismissed: false, destination: nil, hasFinished: true))
+    }
+
+    @Test func hiddenOnceDismissed() {
+        #expect(!shows(dismissed: true, destination: "iCloud Drive › OpenMinutes", hasFinished: true))
+    }
+
+    @Test func shownAfterTheFirstExport() {
+        #expect(shows(dismissed: false, destination: "iCloud Drive › OpenMinutes", hasFinished: true))
+    }
+}
