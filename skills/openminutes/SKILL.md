@@ -42,6 +42,10 @@ real paths, not the Finder display names the user will say out loud.
   computer, so there is nothing to read there. If that is the destination,
   the user has to move the files or switch to iCloud Drive.
 
+A folder can look right and be wrong. Confirm from the frontmatter of a file
+inside it before trusting a folder you found by name alone; every recording
+this app wrote carries an `openminutes` key.
+
 The folder name carries the date and title, so you can narrow by date range
 without opening a single file. Do that before reading, on large libraries.
 
@@ -103,14 +107,22 @@ in its own UI. People get merged, split, or swapped, especially when voices
 overlap. Treat a name as a strong hint, not a fact. When the answer turns on
 who said something, say which line you drew it from so the user can check.
 
-**Files may be present but not downloaded.** iCloud evicts file contents
-under Optimize Mac Storage. The placeholders list normally, with plausible
-names and sizes, and then every read fails with `Resource deadlock avoided`
-or `EPERM`. It looks like a permissions problem and it is not. Check with
-`du -sh` on the library: 0 means nothing is materialized. Fix it with
-`brctl download <path>`, or ask the user to select all in Finder and choose
-Download Now. Do not report the library as empty, corrupt, or inaccessible
-without checking this first.
+**Files can be present but not downloaded.** iCloud evicts file contents
+under Optimize Mac Storage, and the placeholders list normally with plausible
+names and sizes before every read fails with `Resource deadlock avoided`.
+That looks like a permissions problem and is not one. Compare what `du -sh`
+reports for the library against what the file sizes sum to: kilobytes against
+megabytes means nothing is materialized. Do not expect zero, since the
+directory entries themselves occupy blocks. Selecting all in Finder and
+choosing Download Now always works. `brctl download <path>` also works, but
+only when your shell is the user's Mac rather than a sandbox with the folder
+mounted into it, which is the more common arrangement. Do not report the
+library as empty or corrupt without checking this.
+
+**`EPERM` is a different problem and downloading will not fix it.** A read
+that fails that way, or a directory that globs empty while the files are
+plainly there, means you lack access to the location rather than the file
+lacking contents. Ask the user to grant access to the folder instead.
 
 **A missing `## Summary` is not a missing meeting.** Read the transcript.
 
