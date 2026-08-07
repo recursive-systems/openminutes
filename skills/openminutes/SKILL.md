@@ -33,12 +33,12 @@ real paths, not the Finder display names the user will say out loud.
 
 - macOS, iCloud destination:
   `~/Library/Mobile Documents/iCloud~dev~recursivesystems~openminutes/Documents`
-  Finder shows this as "iCloud Drive › OpenMinutes", so that is how the user
+  Finder shows this as "iCloud Drive > OpenMinutes", so that is how the user
   will describe it. The recordings are inside `Documents/`, not at the
   container root.
 - Any folder the user picked, often inside an Obsidian vault. Ask for the
   path rather than guessing.
-- "On My iPhone › OpenMinutes" is on the phone only. It does not sync to a
+- "On My iPhone > OpenMinutes" is on the phone only. It does not sync to a
   computer, so there is nothing to read there. If that is the destination,
   the user has to move the files or switch to iCloud Drive.
 
@@ -66,11 +66,11 @@ audio: audio.m4a
 ---
 
 ## Summary
-…model output, when the user had summaries enabled…
+...model output, when the user had summaries enabled...
 
 ## Transcript
-[00:00:00] Bradley Golden: …
-[00:00:12] Alex: …
+[00:00:00] Bradley Golden: ...
+[00:00:12] Alex: ...
 ```
 
 | Key | Meaning |
@@ -81,7 +81,7 @@ audio: audio.m4a
 | `recorded` | ISO 8601 start time with the device's local UTC offset. Use this, not the file's mtime. |
 | `duration` | Length in whole seconds. |
 | `language` | BCP-47 tag of the transcript body. Absent on audio-only recordings and on older transcripts. |
-| `speakers` | Speaker ID → display name. Present only when speaker labels ran. |
+| `speakers` | Speaker ID to display name. Present only when speaker labels ran. |
 | `audio` | Filename of the sibling audio file. Present only when audio was kept. |
 
 Two sections follow: `## Summary` (optional, absent when the user turned
