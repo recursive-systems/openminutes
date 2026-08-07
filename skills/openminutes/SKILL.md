@@ -25,8 +25,10 @@ One folder per recording, named `YYYY-MM-DD-HHmm <title-slug>`:
   audio.m4a          # present when the user kept audio
 ```
 
-A folder may hold either file or both. Glob `*/transcript.md` from the
-library root to reach every transcript in one pass.
+A folder may hold either file or both. Glob
+`<library root>/*/transcript.md` to reach every transcript at once. Folders
+holding audio and no transcript mean the user kept audio only, which is not
+an empty library.
 
 If you do not know where the library is, check these first, then ask. Use the
 real paths, not the Finder display names the user will say out loud.
@@ -98,14 +100,16 @@ get a wall-clock moment.
 
 ## What to be careful about
 
-**Unlabelled lines are unknown, not unimportant.** A line with no speaker
-prefix means no speaker confidently covered it. Do not guess who spoke it,
-and do not attribute it to whoever spoke last.
+**A line with no speaker prefix was never labelled.** Do not give it a name
+from `speakers`, and do not attribute it to whoever spoke last. That is a
+rule about labels, not about content: what the line says is still evidence,
+so use it and be clear when attribution comes from the words rather than
+from a label.
 
 **Speaker labels are experimental and sometimes wrong.** The app says so
 in its own UI. People get merged, split, or swapped, especially when voices
 overlap. Treat a name as a strong hint, not a fact. When the answer turns on
-who said something, say which line you drew it from so the user can check.
+who said something, quote the line you drew it from so the user can check.
 
 **Files can be present but not downloaded.** iCloud evicts file contents
 under Optimize Mac Storage, and the placeholders list normally with plausible
@@ -155,8 +159,8 @@ answer because the files are in one folder the user owns:
 - "What has come up repeatedly this month?": read summaries first; they are
   short, and the transcripts are the expensive fallback
 
-When you cite something, give the recording title and the timestamp. The
-user can open that recording and jump straight to it.
+When you cite something, give the recording title and the timestamp, not a
+file path. The user can open that recording and jump straight to it.
 
 Read only what you need. A busy library is hundreds of files and most
 questions touch a handful of them.
