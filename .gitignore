@@ -1,0 +1,20 @@
+# Xcode / XcodeGen
+OpenMinutes.xcodeproj/
+Info.plist
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+
+# Swift
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Secrets / local config
+*.env
+*.p8
+*.p12
+*.mobileprovision

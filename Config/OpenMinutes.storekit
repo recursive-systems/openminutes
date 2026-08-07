@@ -1,0 +1,57 @@
+{
+  "identifier": "91058305-88F0-49B0-BE9D-DD59DB76FC0C",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "2.99",
+      "familyShareable": true,
+      "internalID": "EB2820D1-2ECF-41F7-A1F1-C6E95716D1A3",
+      "localizations": [
+        {
+          "description": "A coffee's worth of thanks.",
+          "displayName": "Small Tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.recursivesystems.openminutes.tip.small",
+      "referenceName": "Small Tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": true,
+      "internalID": "7C4A1F92-5B60-4E38-9A11-2D6F0C83B4E7",
+      "localizations": [
+        {
+          "description": "Generous support for ongoing work.",
+          "displayName": "Nice Tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.recursivesystems.openminutes.tip.medium",
+      "referenceName": "Nice Tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "24.99",
+      "familyShareable": true,
+      "internalID": "3F9E6D24-8A17-4C55-B0E3-91C7A5D2F6B8",
+      "localizations": [
+        {
+          "description": "Very generous \u2014 thank you.",
+          "displayName": "Big Tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.recursivesystems.openminutes.tip.large",
+      "referenceName": "Big Tip",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {},
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

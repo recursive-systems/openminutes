@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Hard constraint #2 (CLAUDE.md): zero network calls. This checks app
+      # source only — it does NOT cover dependencies. FluidAudio links
+      # NSURLSession for its HuggingFace model downloader, which this app
+      # never reaches because the models ship in the bundle. So a green run
+      # here means "we wrote no networking", not "the binary cannot network".
+      # Proving the stronger claim needs a proxy capture at runtime.
+      - name: Network-free guard
+        run: |
+          if grep -rnE "URLSession|NWConnection|CFNetwork|import Network" Sources Shared Widgets; then
+            echo "::error::Networking symbol found — v1 must make zero network calls (CLAUDE.md hard constraint #1)"
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      # Runner images vary in which simulators ship installed — resolve a
+      # real iPhone UDID instead of hardcoding a device name.
+      - name: Pick simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[] | .[] | select(.name | test("^iPhone"))][-1].udid')
+          test -n "$UDID" && test "$UDID" != "null"
+          xcrun simctl list devices available | grep -B1 "$UDID" || true
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test (simulator)
+        run: |
+          set -o pipefail
+          # Simulator builds ad-hoc sign; signing must stay ON so the
+          # StoreKit-Test entitlement reaches the app (SKTestSession
+          # throws .notEntitled otherwise).
+          # ProStoreTests skipped: on iOS 26.3+ simulator runtimes,
+          # CLI xcodebuild fails to deliver the .storekit config to
+          # storekitd, so SKTestSession hits production and throws
+          # .notEntitled (https://github.com/flutter/flutter/issues/184678).
+          # They run from the Xcode IDE; re-enable when Apple fixes it.
+          xcodebuild -project OpenMinutes.xcodeproj -scheme OpenMinutes \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' \
+            -derivedDataPath build \
+            -skip-testing:OpenMinutesTests/ProStoreTests \
+            test 2>&1 | xcbeautify --renderer github-actions
+
+      # Second layer of the zero-network claim: the built binary must not
+      # directly link any networking framework.
+      - name: Linked-framework audit
+        run: |
+          BIN=build/Build/Products/Debug-iphonesimulator/OpenMinutes.app/OpenMinutes
+          echo "Direct load commands:"
+          otool -L "$BIN"
+          if otool -L "$BIN" | grep -E "CFNetwork|Network\.framework|NetworkExtension"; then
+            echo "::error::App binary directly links a networking framework"
+            exit 1
+          fi

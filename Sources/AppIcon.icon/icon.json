@@ -1,0 +1,54 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.98039,0.96471,0.93725,1.00000"
+  },
+  "groups" : [
+    {
+      "hidden" : false,
+      "layers" : [
+        {
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "dot.svg",
+          "name" : "dot"
+        },
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "ring.svg",
+          "name" : "ring"
+        }
+      ],
+      "lighting" : "combined",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.4
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "hidden" : false,
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "page.svg",
+          "name" : "page"
+        }
+      ],
+      "lighting" : "combined",
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

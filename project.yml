@@ -1,0 +1,139 @@
+# XcodeGen project definition.  brew install xcodegen && xcodegen generate
+name: OpenMinutes
+options:
+  bundleIdPrefix: dev.recursivesystems
+  deploymentTarget:
+    iOS: "26.0"
+  # Icon Composer .icon packages are single files, not folders
+  # (https://github.com/yonaskolb/XcodeGen/issues/1556).
+  fileTypes:
+    icon:
+      file: true
+packages:
+  # Speaker diarization (Apache 2.0). Its Core ML models are CC-BY-4.0,
+  # derived from pyannote — attribution is required wherever they ship, so
+  # they are credited on the acknowledgements screen.
+  #
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    exactVersion: 0.15.5
+
+# Project-wide so the app and its widget extension can never disagree.
+# App Store Connect rejects an upload whose extension bundle version does
+# not match the app's, and CURRENT_PROJECT_VERSION must rise with every
+# upload against the same MARKETING_VERSION — a build number it has already
+# seen cannot be reclaimed.
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  OpenMinutes:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Shared
+      # Diarization models (~21MB) for the community pipeline. Bundled
+      # rather than downloaded: the
+      # library's own fetch pulls from HuggingFace, which would be this
+      # app's first third-party network call. Small enough that On-Demand
+      # Resources would add more complexity than it saves.
+      - path: Models
+        buildPhase: resources
+    dependencies:
+      - target: OpenMinutesWidgets
+        embed: true
+      - package: FluidAudio
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSMicrophoneUsageDescription: "OpenMinutes records meetings and voice notes you start."
+        NSSpeechRecognitionUsageDescription: "Transcription happens entirely on this device."
+        UIBackgroundModes: [audio, processing]   # keep recording when screen locks; finish processing
+        NSSupportsLiveActivities: true
+        BGTaskSchedulerPermittedIdentifiers:
+          - dev.recursivesystems.openminutes.processing
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.recursivesystems.openminutes
+            CFBundleURLSchemes: [openminutes]
+        # Exposes the app's own Documents folder as "On My iPhone ›
+        # OpenMinutes" in Files — the zero-config destination for users
+        # without iCloud, and the reason export never needs a picker.
+        # No encryption beyond what iOS provides at rest, so the standard
+        # exemption applies. Declaring it here stops App Store Connect
+        # asking on every single upload.
+        ITSAppUsesNonExemptEncryption: false
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # Makes the easy-mode container visible as "OpenMinutes" in iCloud
+        # Drive/Files.
+        NSUbiquitousContainers:
+          iCloud.dev.recursivesystems.openminutes:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: OpenMinutes
+            NSUbiquitousContainerSupportedFolderLevels: Any
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: dev.recursivesystems.openminutes
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # Shared/ intents compile into both targets; only the app target gets
+        # real perform() bodies (the system runs them in the app process).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) APP_TARGET"
+        # Simulator-only StoreKit Test entitlement so SKTestSession works in
+        # unit tests; device and archive builds get no entitlements file.
+        CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]: Config/OpenMinutes-Simulator.entitlements
+        # Easy-mode export (iCloud Drive/OpenMinutes). Needs the paid org
+        # account, which the Recursive Systems LLC team now has; the app
+        # detects the entitlement at runtime and hides easy mode without it.
+        CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]: Config/OpenMinutes-iCloud.entitlements
+
+  OpenMinutesWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [Widgets, Shared]
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: OpenMinutes
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: dev.recursivesystems.openminutes.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+
+  OpenMinutesTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+      # SKTestSession loads the local StoreKit config from the test bundle.
+      - path: Config/OpenMinutes.storekit
+        buildPhase: resources
+    dependencies:
+      - target: OpenMinutes
+      - sdk: StoreKitTest.framework
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  OpenMinutes:
+    build:
+      targets:
+        OpenMinutes: all
+    run:
+      config: Debug
+      storeKitConfiguration: Config/OpenMinutes.storekit
+    test:
+      config: Debug
+      targets:
+        - OpenMinutesTests

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Simulator-only (see project.yml): lets SKTestSession drive the local
+	     StoreKit environment in unit tests. Device/archive builds never see it. -->
+	<key>com.apple.developer.storekit.test</key>
+	<true/>
+	<!-- Deliberately no iCloud keys here. The simulator cannot validate an
+	     iCloud container entitlement, and adding one makes codesign drop
+	     the ENTIRE entitlement set — including storekit.test, which breaks
+	     every SKTestSession test with `.notEntitled`. Easy mode therefore
+	     self-hides in the simulator (PRD C1) and is verified on device. -->
+</dict>
+</plist>
