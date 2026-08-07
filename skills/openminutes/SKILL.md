@@ -28,11 +28,19 @@ One folder per recording, named `YYYY-MM-DD-HHmm <title-slug>`:
 A folder may hold either file or both. Glob `*/transcript.md` from the
 library root to reach every transcript in one pass.
 
-If you do not know where the library is, check these first, then ask:
+If you do not know where the library is, check these first, then ask. Use the
+real paths, not the Finder display names the user will say out loud.
 
-- `iCloud Drive/OpenMinutes`
-- `On My iPhone/OpenMinutes` (synced or copied to the machine you are on)
-- Any folder the user picked, often inside an Obsidian vault or Documents
+- macOS, iCloud destination:
+  `~/Library/Mobile Documents/iCloud~dev~recursivesystems~openminutes/Documents`
+  Finder shows this as "iCloud Drive › OpenMinutes", so that is how the user
+  will describe it. The recordings are inside `Documents/`, not at the
+  container root.
+- Any folder the user picked, often inside an Obsidian vault. Ask for the
+  path rather than guessing.
+- "On My iPhone › OpenMinutes" is on the phone only. It does not sync to a
+  computer, so there is nothing to read there. If that is the destination,
+  the user has to move the files or switch to iCloud Drive.
 
 The folder name carries the date and title, so you can narrow by date range
 without opening a single file. Do that before reading, on large libraries.
@@ -94,6 +102,15 @@ and do not attribute it to whoever spoke last.
 in its own UI. People get merged, split, or swapped, especially when voices
 overlap. Treat a name as a strong hint, not a fact. When the answer turns on
 who said something, say which line you drew it from so the user can check.
+
+**Files may be present but not downloaded.** iCloud evicts file contents
+under Optimize Mac Storage. The placeholders list normally, with plausible
+names and sizes, and then every read fails with `Resource deadlock avoided`
+or `EPERM`. It looks like a permissions problem and it is not. Check with
+`du -sh` on the library: 0 means nothing is materialized. Fix it with
+`brctl download <path>`, or ask the user to select all in Finder and choose
+Download Now. Do not report the library as empty, corrupt, or inaccessible
+without checking this first.
 
 **A missing `## Summary` is not a missing meeting.** Read the transcript.
 
