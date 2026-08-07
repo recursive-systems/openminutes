@@ -1,6 +1,6 @@
 ---
 name: openminutes
-description: Read, search, and answer questions across OpenMinutes meeting recordings: markdown transcripts with YAML frontmatter, one folder per recording. Use when the user asks about their meetings, standups, calls, voice notes, or minutes; when they mention OpenMinutes; when they ask what was decided, what they agreed to, or what their action items are; or when a folder contains dated subfolders holding transcript.md files.
+description: Read, search, and answer questions across OpenMinutes meeting recordings, which are markdown transcripts with YAML frontmatter, one folder per recording. Use when the user asks about their meetings, standups, calls, voice notes, or minutes; when they mention OpenMinutes; when they ask what was decided, what they agreed to, or what their action items are; or when a folder contains dated subfolders holding transcript.md files.
 license: MIT
 metadata:
   author: recursive-systems
