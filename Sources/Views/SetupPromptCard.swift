@@ -33,7 +33,11 @@ struct SetupPromptCard: View {
                 .accessibilityLabel("Dismiss")
             }
 
-            Text("Point your AI at them and it can answer questions across all of them.")
+            // Says where it works. "Point your AI at them" was true on a Mac
+            // and misleading on a phone, which is where this button lives:
+            // phone assistants have no filesystem access, so the obvious
+            // paste target is the one that cannot act on it.
+            Text("Paste it into an AI that can reach the folder. On a phone most assistants can't open files, so attach transcripts instead.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

@@ -85,7 +85,7 @@ struct SettingsView: View {
                 // assistants a person has installed, which is the honest way
                 // to find that out. Querying installed apps would be
                 // fingerprinting, and this app collects nothing.
-                Text("Hand this to Claude, ChatGPT, Gemini, or whatever you use. It points them at your folder and at the format, so they can answer questions across every meeting you have recorded.")
+                Text("Hand this to Claude, ChatGPT, Gemini, or whatever you use. It points them at your folder and at the format.\n\nIt works best on a computer the folder syncs to, where an assistant can read every recording at once. Phone assistants usually can't open files, so attach individual transcripts there instead.")
             }
 
             Section {
