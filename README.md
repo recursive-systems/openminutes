@@ -8,7 +8,7 @@ Record directly in OpenMinutes, or share an M4A recording from Notes or Files in
 
 ## Status
 
-🚧 Pre-release, in App Store review. Buildable from source today: see
+🚧 Pre-release. Buildable from source today: see
 [INSTALL.md](INSTALL.md) to put it on your own iPhone.
 
 ## Why there is no cloud service
