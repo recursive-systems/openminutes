@@ -15,6 +15,7 @@ final class AppServices {
 
     let container: ModelContainer
     let recorder: RecorderService
+    let audioImporter: AudioImportService
     let exporter: ExportService
     let tipJar: TipJar
     let processor: ProcessingCoordinator
@@ -41,6 +42,7 @@ final class AppServices {
             fatalError("Failed to create SwiftData container: \(error)")
         }
         recorder = RecorderService()
+        audioImporter = AudioImportService()
         exporter = ExportService()
         tipJar = TipJar()
         diarizer = SpeakerDiarizer()

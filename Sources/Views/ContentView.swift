@@ -1,11 +1,13 @@
 import AVFAudio
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ExportService.self) private var exporter
+    @Environment(AudioImportService.self) private var audioImporter
     @Environment(ProcessingCoordinator.self) private var processor
     @Environment(RecorderService.self) private var recorder
     @Query(sort: \Recording.createdAt, order: .reverse) private var recordings: [Recording]
@@ -13,6 +15,8 @@ struct ContentView: View {
     @AppStorage("consentNoticeDismissed") private var consentDismissed = false
     @AppStorage("setupPromptDismissed") private var setupPromptDismissed = false
     @State private var showFolderPicker = false
+    @State private var showAudioPicker = false
+    @State private var importError: String?
     @State private var micPermission = AVAudioApplication.shared.recordPermission
     @State private var searchText = ""
 
@@ -139,6 +143,19 @@ struct ContentView: View {
                         prompt: "Search titles and transcripts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    if audioImporter.isImporting {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Importing audio")
+                    } else {
+                        Button {
+                            showAudioPicker = true
+                        } label: {
+                            Label("Import Audio", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         SettingsView()
                     } label: {
@@ -160,6 +177,23 @@ struct ContentView: View {
                     exporter.setFolder(url)
                     processor.exportPendingRecordings()
                 }
+            }
+            .fileImporter(isPresented: $showAudioPicker,
+                          allowedContentTypes: [.mpeg4Audio]) { result in
+                switch result {
+                case .success(let url):
+                    importAudio(from: url)
+                case .failure(let error):
+                    importError = error.localizedDescription
+                }
+            }
+            .alert("Couldn't Import Audio", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(importError ?? "")
             }
             .fullScreenCover(isPresented: Binding(
                 get: { !onboardingComplete },
@@ -185,10 +219,35 @@ struct ContentView: View {
                 }
             }
             .onOpenURL { url in
-                // Lock Screen widget deep link (accessory widgets can't run
-                // intents directly; they open the app to start recording).
-                guard url.scheme == "openminutes", url.host == "record" else { return }
-                if recorder.state == .idle { try? recorder.start() }
+                switch OpenMinutesURLRoute(url: url) {
+                case .importAudio(let fileURL):
+                    importAudio(from: fileURL)
+                case .startRecording:
+                    // Lock Screen widget deep link (accessory widgets can't
+                    // run intents directly; they open the app to record).
+                    if recorder.state == .idle { try? recorder.start() }
+                case .unsupported:
+                    break
+                }
+            }
+        }
+    }
+
+    private func importAudio(from url: URL) {
+        Task {
+            do {
+                let recording = try await audioImporter.importRecording(from: url)
+                context.insert(recording)
+                do {
+                    try context.save()
+                } catch {
+                    context.delete(recording)
+                    try? FileManager.default.removeItem(at: recording.audioURL)
+                    throw error
+                }
+                processor.enqueue(recording)
+            } catch {
+                importError = error.localizedDescription
             }
         }
     }

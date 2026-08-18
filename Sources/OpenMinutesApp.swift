@@ -34,6 +34,7 @@ struct OpenMinutesApp: App {
             ContentView()
                 .tint(.recordRed)   // brand accent everywhere (matches icon + site)
                 .environment(services.recorder)
+                .environment(services.audioImporter)
                 .environment(services.exporter)
                 .environment(services.processor)
                 .environment(services.tipJar)

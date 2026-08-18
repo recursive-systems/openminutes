@@ -67,6 +67,13 @@ targets:
         # asking on every single upload.
         ITSAppUsesNonExemptEncryption: false
         UIFileSharingEnabled: true
+        # Lets Notes/Files offer OpenMinutes for shared Apple call recordings.
+        # The app copies the file immediately; it never modifies the source.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: M4A Audio Recording
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.mpeg-4-audio]
         LSSupportsOpeningDocumentsInPlace: true
         # Makes the easy-mode container visible as "OpenMinutes" in iCloud
         # Drive/Files.
