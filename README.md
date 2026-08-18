@@ -4,6 +4,8 @@
 
 OpenMinutes uses Apple's on-device SpeechTranscriber and Foundation Models, so processing never leaves your phone. Every recording becomes its own folder in a place you choose (iCloud Drive, an Obsidian vault, any file provider that supports folder access), holding the transcript as markdown with YAML frontmatter, the audio as a plain `.m4a`, or both. Your call, in Settings. Which means your AI tools can already read it, and the audio is still yours to keep. No new cloud: files sync through whatever your phone already syncs.
 
+Record directly in OpenMinutes, or share an M4A recording from Notes or Files into the app. Imported audio enters the same on-device transcript, summary, title, and export pipeline as an in-app recording.
+
 ## Status
 
 🚧 Pre-release, in App Store review. Buildable from source today: see
