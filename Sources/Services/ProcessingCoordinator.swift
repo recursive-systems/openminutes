@@ -291,6 +291,7 @@ final class ProcessingCoordinator {
                 // Models (which rate-limits backgrounded apps). The flag
                 // stays set; retryPendingTitles() finishes the job the next
                 // time the app is in the foreground.
+                log.error("Title generation failed: \(error.localizedDescription, privacy: .public)")
             }
         }
 
@@ -356,6 +357,7 @@ final class ProcessingCoordinator {
             recording.titleNeedsGeneration = false
             save()
         } catch {
+            log.error("Title retry failed: \(error.localizedDescription, privacy: .public)")
             return   // still pending; the next foreground pass retries
         }
         // Rewrite an existing export under the new title; a recording that

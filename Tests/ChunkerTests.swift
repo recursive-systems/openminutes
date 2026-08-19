@@ -48,4 +48,31 @@ struct ChunkerTests {
     @Test func whitespaceOnlyYieldsNothing() {
         #expect(SummaryService.chunk(String(repeating: " ", count: 20_000), target: 8_000).isEmpty)
     }
+
+    @Test func shrunkHalvesAtLineBoundary() throws {
+        let lines = (0..<40).map { "Line \($0) of a transcript that runs well past the shrink threshold." }
+        let text = lines.joined(separator: "\n")
+        let half = text.count / 2
+
+        let shrunk = try #require(SummaryService.shrunk(text))
+        #expect(shrunk.count <= half)
+        // Kept from the front, and the cut lands between lines rather than mid-word.
+        #expect(text.hasPrefix(shrunk))
+        #expect(text.dropFirst(shrunk.count).first == "\n")
+        // Every retained line survives intact.
+        let kept = shrunk.split(separator: "\n").map(String.init)
+        #expect(kept.count > 1)
+        #expect(kept == Array(lines.prefix(kept.count)))
+    }
+
+    @Test func shrunkReturnsNilBelowThreshold() {
+        #expect(SummaryService.shrunk(String(repeating: "a", count: 399)) == nil)
+        #expect(SummaryService.shrunk("") == nil)
+        #expect(SummaryService.shrunk(String(repeating: "a", count: 400)) != nil)
+    }
+
+    @Test func shrunkHardCutsUnbrokenText() throws {
+        let shrunk = try #require(SummaryService.shrunk(String(repeating: "a", count: 1_000)))
+        #expect(shrunk == String(repeating: "a", count: 500))
+    }
 }

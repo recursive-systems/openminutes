@@ -55,16 +55,20 @@ struct SummaryService {
         try checkAvailability()
 
         if transcript.count <= Self.chunkThreshold {
-            return try await respond(to: "Summarize this transcript:\n\n\(transcript)",
-                                     instructions: Self.finalInstructions)
+            return try await respondSplittingOverflow(
+                content: transcript,
+                prompt: { "Summarize this transcript:\n\n\($0)" },
+                instructions: Self.finalInstructions
+            )
         }
 
         // Map: summarize each chunk independently.
         let chunks = Self.chunk(transcript, target: Self.chunkThreshold)
         var partials: [String] = []
         for (index, chunk) in chunks.enumerated() {
-            let partial = try await respond(
-                to: "Part \(index + 1) of \(chunks.count):\n\n\(chunk)",
+            let partial = try await respondSplittingOverflow(
+                content: chunk,
+                prompt: { "Part \(index + 1) of \(chunks.count):\n\n\($0)" },
                 instructions: Self.chunkInstructions
             )
             partials.append(partial)
@@ -77,14 +81,19 @@ struct SummaryService {
         while combined.count > Self.chunkThreshold && rounds < 3 {
             var merged: [String] = []
             for piece in Self.chunk(combined, target: Self.chunkThreshold) {
-                merged.append(try await respond(to: piece, instructions: Self.mergeInstructions))
+                merged.append(try await respondSplittingOverflow(
+                    content: piece,
+                    prompt: { $0 },
+                    instructions: Self.mergeInstructions
+                ))
             }
             combined = merged.joined(separator: "\n\n")
             rounds += 1
         }
 
-        return try await respond(
-            to: "Combined notes from a long meeting:\n\n\(combined)",
+        return try await respondSplittingOverflow(
+            content: combined,
+            prompt: { "Combined notes from a long meeting:\n\n\($0)" },
             instructions: Self.finalInstructions
         )
     }
@@ -92,18 +101,28 @@ struct SummaryService {
     func title(transcript: String, summary: String?) async throws -> String {
         try checkAvailability()
 
-        let source: String
-        if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            source = "Summary:\n\n\(summary)"
-        } else {
-            source = "Transcript:\n\n\(Self.chunk(transcript, target: Self.chunkThreshold).first ?? transcript)"
+        let trimmedSummary = summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var label = "Summary"
+        var source = trimmedSummary
+        if source.isEmpty {
+            label = "Transcript"
+            // Half the summary chunk size: plenty for a title, and dense
+            // transcripts (timestamps every line) overflow at full size.
+            source = Self.chunk(transcript, target: Self.chunkThreshold / 2).first ?? transcript
         }
 
-        let rawTitle = try await respond(
-            to: "Create a title for this recording:\n\n\(source)",
-            instructions: Self.titleInstructions
-        )
-        return Self.cleanTitle(rawTitle)
+        while true {
+            do {
+                let rawTitle = try await respond(
+                    to: "Create a title for this recording:\n\n\(label):\n\n\(source)",
+                    instructions: Self.titleInstructions
+                )
+                return Self.cleanTitle(rawTitle)
+            } catch let error where error.isExceededContextWindow {
+                guard let smaller = Self.shrunk(source) else { throw error }
+                source = smaller
+            }
+        }
     }
 
     private func checkAvailability() throws {
@@ -133,6 +152,28 @@ struct SummaryService {
         return try await session.respond(to: prompt).content
     }
 
+    /// `respond`, splitting the content in half at chunk boundaries whenever
+    /// the model's token window overflows despite the character threshold.
+    /// Sub-results are joined — for partial summaries that is exactly the
+    /// map-reduce contract, and the reduce rounds shorten them further.
+    private func respondSplittingOverflow(
+        content: String,
+        prompt: (String) -> String,
+        instructions: String
+    ) async throws -> String {
+        do {
+            return try await respond(to: prompt(content), instructions: instructions)
+        } catch let error where error.isExceededContextWindow {
+            guard content.count >= 400 else { throw error }
+            var parts: [String] = []
+            for piece in Self.chunk(content, target: content.count / 2) {
+                parts.append(try await respondSplittingOverflow(
+                    content: piece, prompt: prompt, instructions: instructions))
+            }
+            return parts.joined(separator: "\n\n")
+        }
+    }
+
     /// Splits `text` into pieces of at most `target` characters, cutting at the
     /// last line break in range, else the last sentence terminator, else hard.
     static func chunk(_ text: String, target: Int) -> [String] {
@@ -156,6 +197,15 @@ struct SummaryService {
         return chunks
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Half of `text`, cut at a chunk boundary — the overflow fallback when
+    /// a piece under `chunkThreshold` characters still exceeds the model's
+    /// token window. Nil once the text is too small for halving to be the
+    /// problem.
+    static func shrunk(_ text: String) -> String? {
+        guard text.count >= 400 else { return nil }
+        return chunk(text, target: text.count / 2).first
     }
 
     static func cleanTitle(_ title: String, maxLength: Int = 48) -> String {
@@ -186,5 +236,16 @@ struct SummaryService {
             cleaned = String(prefix)
         }
         return cleaned.trimmingCharacters(in: CharacterSet(charactersIn: ".:;,- "))
+    }
+}
+
+private extension Error {
+    /// The on-device model's context window is a hard token limit that a
+    /// character threshold cannot guarantee — token density varies wildly
+    /// with timestamps, punctuation, and script.
+    var isExceededContextWindow: Bool {
+        guard let error = self as? LanguageModelSession.GenerationError else { return false }
+        if case .exceededContextWindowSize = error { return true }
+        return false
     }
 }
