@@ -18,7 +18,10 @@ TEAM_ID=$(security find-certificate -c "Apple Development" -p 2>/dev/null \
   | openssl x509 -noout -subject 2>/dev/null \
   | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -1)
 [ -n "$TEAM_ID" ] || die "No Apple Development certificate. One-time setup: Xcode → Settings → Accounts → add your Apple ID, enable automatic signing once (see INSTALL.md step 3)."
-UDID=$(xcrun xctrace list devices 2>&1 | sed -n 's/.*(\([0-9A-F-]\{25,\}\))$/\1/p' | head -1)
+# Ask xcodebuild, not xctrace: xctrace lists this Mac first, and its
+# hardware UDID is indistinguishable from an iPhone's by format alone.
+UDID=$(xcodebuild -project OpenMinutes.xcodeproj -scheme OpenMinutes -showdestinations 2>/dev/null \
+  | sed -n 's/.*platform:iOS, arch:[^,]*, id:\([0-9A-F-]*\), name:.*/\1/p' | head -1)
 [ -n "$UDID" ] || die "No iPhone detected — connect it by cable, unlock it, and tap 'Trust This Computer'."
 echo "team: $TEAM_ID   device: $UDID"
 
