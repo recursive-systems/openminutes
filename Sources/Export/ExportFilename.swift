@@ -61,4 +61,35 @@ enum ExportFilename {
         }
         return candidate
     }
+
+    /// What a re-export should do with the recording's folder.
+    enum FolderPlan: Equatable {
+        /// The previous export's name still matches the title — write into it.
+        case overwrite(String)
+        /// The title changed since the last export (late-generated title or a
+        /// manual rename) — move the folder so its name carries the title.
+        case move(from: String, to: String)
+        /// No previous export folder — mint a collision-safe name.
+        case create(String)
+    }
+
+    static func folderPlan(
+        existingFolderName: String?,
+        title: String,
+        recorded: Date,
+        timeZone: TimeZone = .current,
+        exists: (String) -> Bool
+    ) -> FolderPlan {
+        let base = base(title: title, recorded: recorded, timeZone: timeZone)
+        guard let existing = existingFolderName, exists(existing) else {
+            return .create(uniqueDirectory(base: base, exists: exists))
+        }
+        if existing == base { return .overwrite(existing) }
+        // A `-2`-style collision suffix from the original export still counts
+        // as matching the title.
+        if existing.hasPrefix("\(base)-"), Int(existing.dropFirst(base.count + 1)) != nil {
+            return .overwrite(existing)
+        }
+        return .move(from: existing, to: uniqueDirectory(base: base, exists: exists))
+    }
 }

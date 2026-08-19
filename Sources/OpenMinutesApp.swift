@@ -48,6 +48,11 @@ struct OpenMinutesApp: App {
         }
         .modelContainer(services.container)
         .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                // Titles whose Foundation Models call failed while the app
+                // was backgrounded get their retry here.
+                services.processor.retryPendingTitles()
+            }
             if phase == .background {
                 services.processor.scheduleBackgroundProcessingIfNeeded()
             }

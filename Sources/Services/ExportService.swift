@@ -203,14 +203,31 @@ final class ExportService {
         // folder that holds only audio, only a transcript, or both is a
         // truthful picture of what was kept.
         let folderName: String
-        if let existing = recording.exportedFolderName,
-           FileManager.default.fileExists(atPath: folder.appending(path: existing).path(percentEncoded: false)) {
-            folderName = existing   // overwrite our own previous export
-        } else {
-            let base = ExportFilename.base(title: recording.title, recorded: recording.createdAt)
-            folderName = ExportFilename.uniqueDirectory(base: base) { candidate in
-                FileManager.default.fileExists(
-                    atPath: folder.appending(path: candidate).path(percentEncoded: false))
+        let plan = ExportFilename.folderPlan(
+            existingFolderName: recording.exportedFolderName,
+            title: recording.title,
+            recorded: recording.createdAt
+        ) { candidate in
+            FileManager.default.fileExists(
+                atPath: folder.appending(path: candidate).path(percentEncoded: false))
+        }
+        switch plan {
+        case .overwrite(let name), .create(let name):
+            folderName = name
+        case .move(let previous, let renamed):
+            // The title changed since the last export (a late-generated title
+            // or a manual rename): carry the folder to the new name so what
+            // the user sees in Files matches the title. A failed move keeps
+            // the old name rather than minting a duplicate folder.
+            let source = folder.appending(path: previous, directoryHint: .isDirectory)
+            let destination = folder.appending(path: renamed, directoryHint: .isDirectory)
+            do {
+                try await Task.detached {
+                    try Self.coordinatedMove(from: source, to: destination)
+                }.value
+                folderName = renamed
+            } catch {
+                folderName = previous
             }
         }
         let recordingFolder = folder.appending(path: folderName, directoryHint: .isDirectory)
@@ -303,6 +320,22 @@ final class ExportService {
         }
         if let coordinationError { throw coordinationError }
         if let writeError { throw writeError }
+    }
+
+    nonisolated private static func coordinatedMove(from source: URL, to destination: URL) throws {
+        var coordinationError: NSError?
+        var moveError: Error?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            writingItemAt: source, options: .forMoving,
+            writingItemAt: destination, options: .forReplacing,
+            error: &coordinationError
+        ) { actualSource, actualDestination in
+            do {
+                try FileManager.default.moveItem(at: actualSource, to: actualDestination)
+            } catch { moveError = error }
+        }
+        if let coordinationError { throw coordinationError }
+        if let moveError { throw moveError }
     }
 
     nonisolated private static func coordinatedCopy(from source: URL, to destination: URL) throws {

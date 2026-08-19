@@ -73,13 +73,22 @@ final class ProcessingCoordinator {
     /// Tasks chain on the previous one so pipeline work runs serially —
     /// interleaved transcriptions burn battery without finishing sooner.
     func enqueue(_ recording: Recording) {
+        enqueue(recording) { coordinator in
+            await coordinator.process(recording)
+        }
+    }
+
+    private func enqueue(
+        _ recording: Recording,
+        run: @escaping @MainActor (ProcessingCoordinator) async -> Void
+    ) {
         guard tasks[recording.id] == nil else { return }
         let id = recording.id
         let previous = lastEnqueued
         let task = Task { [weak self] in
             await previous?.value
-            if !Task.isCancelled {
-                await self?.process(recording)
+            if !Task.isCancelled, let self {
+                await run(self)
             }
             self?.tasks[id] = nil
         }
@@ -104,6 +113,24 @@ final class ProcessingCoordinator {
 
     func retry(_ recording: Recording) {
         enqueue(recording)
+    }
+
+    /// Re-tries titles left behind by a failed best-effort title call — the
+    /// pipeline continues past that failure (Foundation Models rate-limits
+    /// backgrounded apps, and export must not wait on it), so the placeholder
+    /// would otherwise stick forever on a finished recording. Called on
+    /// launch and on every return to the foreground; a success rewrites the
+    /// existing export so the folder name and frontmatter carry the title.
+    func retryPendingTitles() {
+        let all = (try? context.fetch(FetchDescriptor<Recording>())) ?? []
+        for recording in all
+        where recording.titleNeedsGeneration
+            && !recording.status.isUnfinished
+            && recording.transcript != nil {
+            enqueue(recording) { coordinator in
+                await coordinator.generateTitle(for: recording)
+            }
+        }
     }
 
     /// Exports recordings stranded by a revoked folder (PRD C5) — call
@@ -260,8 +287,10 @@ final class ProcessingCoordinator {
                     save()
                 }
             } catch {
-                // A polished title is best-effort; transcript/export should
-                // still complete when Foundation Models are unavailable.
+                // Best-effort here — export must not wait on Foundation
+                // Models (which rate-limits backgrounded apps). The flag
+                // stays set; retryPendingTitles() finishes the job the next
+                // time the app is in the foreground.
             }
         }
 
@@ -304,6 +333,47 @@ final class ProcessingCoordinator {
 
         recording.status = .done
         save()
+    }
+
+    /// Late title pass for a finished recording: the pipeline's title stage,
+    /// re-run alone, then a rewrite of the existing export so the visible
+    /// folder name carries the generated title.
+    private func generateTitle(for recording: Recording) async {
+        guard !inFlight.contains(recording.id) else { return }
+        guard recording.titleNeedsGeneration,
+              !wasDeleted(recording),
+              let transcript = recording.transcript else { return }
+        inFlight.insert(recording.id)
+        backgroundContinuation.begin()
+        defer {
+            inFlight.remove(recording.id)
+            backgroundContinuation.end()
+        }
+        do {
+            let title = try await summarizer.title(transcript: transcript, summary: recording.summary)
+            guard !title.isEmpty, !wasDeleted(recording), recording.titleNeedsGeneration else { return }
+            recording.title = title
+            recording.titleNeedsGeneration = false
+            save()
+        } catch {
+            return   // still pending; the next foreground pass retries
+        }
+        // Rewrite an existing export under the new title; a recording that
+        // was never exported keeps waiting for its normal export trigger.
+        guard exporter.isConfigured, recording.exportedFolderName != nil else { return }
+        do {
+            let url = try await exporter.export(recording)
+            guard !wasDeleted(recording) else { return }
+            recording.exportedFolderName = url.deletingLastPathComponent().lastPathComponent
+            save()
+        } catch ExportService.ExportError.folderRevoked {
+            guard !wasDeleted(recording) else { return }
+            recording.exportPending = true
+            save()
+        } catch {
+            // The previous export still exists under the placeholder name;
+            // the next re-export pass catches up.
+        }
     }
 
     private func fail(_ recording: Recording, _ reason: String) {

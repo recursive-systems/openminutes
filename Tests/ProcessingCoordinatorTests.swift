@@ -76,14 +76,27 @@ private final class FakeExporter: Exporting {
         if let error { throw error }
 
         let folderName: String
-        if let existing = recording.exportedFolderName,
-           FileManager.default.fileExists(atPath: folder.appending(path: existing).path(percentEncoded: false)) {
-            folderName = existing
-        } else {
-            let base = ExportFilename.base(title: recording.title, recorded: recording.createdAt)
-            folderName = ExportFilename.uniqueDirectory(base: base) { candidate in
-                FileManager.default.fileExists(
-                    atPath: folder.appending(path: candidate).path(percentEncoded: false))
+        let plan = ExportFilename.folderPlan(
+            existingFolderName: recording.exportedFolderName,
+            title: recording.title,
+            recorded: recording.createdAt
+        ) { candidate in
+            FileManager.default.fileExists(
+                atPath: folder.appending(path: candidate).path(percentEncoded: false))
+        }
+        switch plan {
+        case .overwrite(let name), .create(let name):
+            folderName = name
+        case .move(let previous, let renamed):
+            // Same rule as ExportService: carry the folder to the new name,
+            // and keep the old one rather than mint a duplicate if that fails.
+            do {
+                try FileManager.default.moveItem(
+                    at: folder.appending(path: previous, directoryHint: .isDirectory),
+                    to: folder.appending(path: renamed, directoryHint: .isDirectory))
+                folderName = renamed
+            } catch {
+                folderName = previous
             }
         }
         let recordingFolder = folder.appending(path: folderName, directoryHint: .isDirectory)
@@ -205,6 +218,19 @@ private struct Pipeline {
         context.insert(recording)
         return recording
     }
+}
+
+/// `retryPendingTitles()` hands its work to tasks and returns, so a test that
+/// asserted immediately would read the state before the retry ran. Yielding
+/// lets those tasks run on this same actor; the bound turns a retry that never
+/// lands into a failed expectation rather than a hung suite.
+@MainActor
+private func yieldUntil(limit: Int = 10_000, _ condition: () -> Bool) async -> Bool {
+    for _ in 0..<limit {
+        if condition() { return true }
+        await Task.yield()
+    }
+    return condition()
 }
 
 // MARK: - Tests
@@ -620,6 +646,103 @@ struct ProcessingCoordinatorTests {
         // Overwrites in place — no `-2` copy is minted.
         #expect(recording.exportedFolderName == firstFolderName)
         #expect(recording.status == .done)
+    }
+
+    /// A title that failed during the pipeline is not lost: the recording
+    /// finishes and exports under its placeholder, and the next retry pass gives
+    /// it a real title — carrying the already-exported folder to the new name
+    /// so what the user sees in Files is not stuck at "Recording Jun 9…".
+    @Test func titleFailureLeavesFlagSetAndRetrySucceedsAndRenamesExport() async throws {
+        let pipeline = try Pipeline()
+        pipeline.summarizer.error = SummaryService.SummaryError.modelUnavailable("Not available.")
+        let recording = pipeline.insertRecording()
+
+        await pipeline.coordinator.process(recording)
+
+        #expect(recording.status == .done)
+        #expect(recording.titleNeedsGeneration == true)
+        let placeholderFolder = try #require(recording.exportedFolderName)
+
+        pipeline.summarizer.error = nil
+        pipeline.coordinator.retryPendingTitles()
+        let retried = await yieldUntil {
+            recording.titleNeedsGeneration == false
+                && recording.exportedFolderName != placeholderFolder
+        }
+        #expect(retried)
+
+        #expect(recording.title == pipeline.summarizer.title)
+        let renamedFolder = try #require(recording.exportedFolderName)
+        #expect(renamedFolder.contains("launch-checklist-standup"))
+        // Moved, not copied: a second folder for one recording would read as
+        // a duplicate export.
+        #expect(!FileManager.default.fileExists(
+            atPath: pipeline.exporter.folder
+                .appending(path: placeholderFolder).path(percentEncoded: false)))
+
+        let rendered = try String(
+            contentsOf: pipeline.exporter.folder
+                .appending(path: renamedFolder)
+                .appending(path: ExportService.exportedTranscriptName),
+            encoding: .utf8)
+        #expect(rendered.contains("title: \(pipeline.summarizer.title)"))
+    }
+
+    /// A retry that fails again changes nothing — the flag stays set so the
+    /// next foreground pass tries once more, and the export is left alone
+    /// rather than rewritten under the placeholder.
+    @Test func retryLeavesTitlePendingWhenModelStillUnavailable() async throws {
+        let pipeline = try Pipeline()
+        pipeline.summarizer.error = SummaryService.SummaryError.modelUnavailable("Not available.")
+        let recording = pipeline.insertRecording()
+
+        await pipeline.coordinator.process(recording)
+        let folderBefore = try #require(recording.exportedFolderName)
+        let exportsBefore = pipeline.exporter.exportCallCount
+
+        pipeline.coordinator.retryPendingTitles()
+        let retried = await yieldUntil { pipeline.summarizer.titleCallCount == 2 }
+        #expect(retried)
+
+        #expect(recording.title.hasPrefix(Recording.defaultTitlePrefix))
+        #expect(recording.titleNeedsGeneration == true)
+        #expect(recording.exportedFolderName == folderBefore)
+        #expect(pipeline.exporter.exportCallCount == exportsBefore)
+    }
+
+    /// The retry pass is only for placeholder titles on finished recordings:
+    /// a title the user typed must never be replaced, and a recording still
+    /// mid-pipeline gets its title from the pipeline itself.
+    @Test func retrySkipsCustomTitlesAndUnfinishedRecordings() async throws {
+        let pipeline = try Pipeline()
+        let manual = pipeline.insertRecording(
+            transcript: "[00:00:00] Already transcribed.", status: .done)
+        manual.title = "Manual Client Debrief"
+        manual.titleNeedsGeneration = false
+        _ = pipeline.insertRecording(
+            transcript: "[00:00:00] Already transcribed.", status: .transcribing)
+
+        pipeline.coordinator.retryPendingTitles()
+        _ = await yieldUntil(limit: 200) { pipeline.summarizer.titleCallCount > 0 }
+
+        #expect(pipeline.summarizer.titleCallCount == 0)
+        #expect(manual.title == "Manual Client Debrief")
+    }
+
+    /// Without a previous export there is nothing to rename, and a title is
+    /// not itself an export trigger — the recording waits for the normal one.
+    @Test func retryWithoutPriorExportGeneratesTitleButDoesNotExport() async throws {
+        let pipeline = try Pipeline()
+        let recording = pipeline.insertRecording(
+            transcript: "[00:00:00] Already transcribed.", status: .done)
+
+        pipeline.coordinator.retryPendingTitles()
+        let retried = await yieldUntil { recording.titleNeedsGeneration == false }
+        #expect(retried)
+
+        #expect(recording.title == pipeline.summarizer.title)
+        #expect(pipeline.exporter.exportCallCount == 0)
+        #expect(recording.exportedFolderName == nil)
     }
 
     @Test func unconfiguredExporterSkipsExportQuietly() async throws {

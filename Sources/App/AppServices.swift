@@ -82,5 +82,6 @@ final class AppServices {
         bootstrapped = true
         LegacyStoreMigrator.migrateIfNeeded(into: container.mainContext)
         processor.resumeUnfinished()
+        processor.retryPendingTitles()
     }
 }
