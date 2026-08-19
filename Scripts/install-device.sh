@@ -47,12 +47,17 @@ say "4/5 Building (signed)"
 xcodebuild -project OpenMinutes.xcodeproj -scheme OpenMinutes \
   -destination "platform=iOS,id=$UDID" \
   DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
-  -allowProvisioningUpdates build | tail -1
+  -allowProvisioningUpdates build | awk 'END{print}'
 
 say "5/5 Installing"
-DERIVED=$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/OpenMinutes-* | head -1)
+# Ask xcodebuild where it just built — DerivedData can hold several
+# OpenMinutes-* directories, and globbing one installs a stale build.
+BUILT=$(xcodebuild -project OpenMinutes.xcodeproj -scheme OpenMinutes \
+  -destination "platform=iOS,id=$UDID" -showBuildSettings build 2>/dev/null \
+  | sed -n 's/^ *BUILT_PRODUCTS_DIR = //p' | awk 'NR==1')
+[ -n "$BUILT" ] || die "Could not resolve BUILT_PRODUCTS_DIR from xcodebuild."
 xcrun devicectl device install app --device "$UDID" \
-  "$DERIVED/Build/Products/Debug-iphoneos/OpenMinutes.app" >/dev/null
+  "$BUILT/OpenMinutes.app" >/dev/null
 xcrun devicectl device info apps --device "$UDID" | grep -i openminutes
 
 say "Done. On the phone: Settings → General → VPN & Device Management → trust your Apple ID (first install only). Free-team builds expire in 7 days — re-run this script to re-sign; your recordings survive."
