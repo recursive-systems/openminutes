@@ -50,6 +50,8 @@ this app wrote carries an `openminutes` key.
 
 The folder name carries the date and title, so you can narrow by date range
 without opening a single file. Do that before reading, on large libraries.
+The listing is still there when the file contents are not; use it to choose
+before you try to read.
 
 ## Reading a transcript
 
@@ -111,17 +113,22 @@ in its own UI. People get merged, split, or swapped, especially when voices
 overlap. Treat a name as a strong hint, not a fact. When the answer turns on
 who said something, quote the line you drew it from so the user can check.
 
-**Files can be present but not downloaded.** iCloud evicts file contents
-under Optimize Mac Storage, and the placeholders list normally with plausible
-names and sizes before every read fails with `Resource deadlock avoided`.
-That looks like a permissions problem and is not one. Compare what `du -sh`
-reports for the library against what the file sizes sum to: kilobytes against
-megabytes means nothing is materialized. Do not expect zero, since the
-directory entries themselves occupy blocks. Selecting all in Finder and
-choosing Download Now always works. `brctl download <path>` also works, but
-only when your shell is the user's Mac rather than a sandbox with the folder
-mounted into it, which is the more common arrangement. Do not report the
-library as empty or corrupt without checking this.
+**Files can be present but not downloaded.** iCloud Drive and similar file
+providers keep the folder listing on the Mac and often leave the contents in
+the cloud. Names, dates, and sizes look real. Opening a file is what fails.
+That is not a permissions problem, and it is not an empty or corrupt library.
+
+The listing is enough to choose. You can tell which recordings exist, which
+have a transcript, and whether that transcript is actually on disk, without
+reading a byte of it. Narrow to what the question needs, then bring those
+transcripts local. Skip the audio unless the user asked for it: it is large,
+and you do not need it to answer questions about what was said.
+
+How you materialize depends on where you are running. On the user's Mac the
+OS can fetch a file on demand. Inside a sandbox that only has a mounted copy
+of the folder, that often does not work. If you cannot get the contents, say
+so and ask the user rather than guessing, and do not fetch the whole library
+to answer a question that touches a handful of meetings.
 
 **`EPERM` is a different problem and downloading will not fix it.** A read
 that fails that way, or a directory that globs empty while the files are
