@@ -70,6 +70,12 @@ final class ExportService {
         usesAppOwnedFolder || UserDefaults.standard.data(forKey: Self.bookmarkKey) != nil
     }
 
+    /// Live `transcript.md` is written only when there is somewhere to put it
+    /// and the user asked to keep transcripts. Audio-only recordings skip it.
+    var shouldStreamLiveTranscript: Bool {
+        isConfigured && RecordingContentPreference.current.includesTranscript
+    }
+
     private var lastKnownFolderName: String {
         UserDefaults.standard.string(forKey: Self.folderNameKey) ?? "export folder"
     }
@@ -158,42 +164,100 @@ final class ExportService {
         }
     }
 
-    static let exportedTranscriptName = "transcript.md"
-    static let exportedAudioName = "audio.m4a"
+    nonisolated static let exportedTranscriptName = "transcript.md"
+    nonisolated static let exportedAudioName = "audio.m4a"
+
+    private struct LiveSession {
+        let id: UUID
+        let startedAt: Date
+        let title: String
+        let folderName: String
+        let language: String?
+    }
+
+    private var liveSession: LiveSession?
+    private var pendingLiveWrite: (lines: [TimedLine], elapsed: TimeInterval)?
+    private var liveWriteTask: Task<Void, Never>?
+
+    /// Folder name of the in-progress export, if a live session is open.
+    var liveFolderName: String? { liveSession?.folderName }
+
+    /// Creates the recording folder and an empty `transcript.md` marked
+    /// `status: recording`. Best effort: a failure here cannot stop capture.
+    func beginLiveSession(id: UUID, startedAt: Date) async {
+        guard shouldStreamLiveTranscript, liveSession == nil else { return }
+        let title = Recording.defaultTitle(for: startedAt)
+        let language = TranscriptionLanguage.tag(for: TranscriptionLanguage.current())
+        do {
+            let (folder, securityScoped) = try await resolveDestination()
+            defer { if securityScoped { folder.stopAccessingSecurityScopedResource() } }
+            let folderName = try await Task.detached {
+                try LiveExportWriter(root: folder).createSession(
+                    title: title, recorded: startedAt, language: language)
+            }.value
+            liveSession = LiveSession(
+                id: id, startedAt: startedAt, title: title,
+                folderName: folderName, language: language)
+        } catch {
+            // Live export is disposable, same rule as the on-screen transcript.
+        }
+    }
+
+    /// Coalesces rapid finalized-line updates into one rewrite a second.
+    func scheduleLiveTranscriptWrite(lines: [TimedLine], elapsed: TimeInterval) {
+        guard liveSession != nil else { return }
+        pendingLiveWrite = (lines, elapsed)
+        guard liveWriteTask == nil else { return }
+        liveWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            await self?.flushLiveWrite()
+        }
+    }
+
+    /// Last live rewrite (`status: processing`), optional audio copy, then
+    /// stamps `exportedFolderName` so the pipeline overwrites this folder
+    /// rather than minting a second one. Always sets the folder name when a
+    /// session exists, even if the last write fails.
+    func finishLiveSession(recording: Recording, lines: [TimedLine]) async {
+        liveWriteTask?.cancel()
+        liveWriteTask = nil
+        pendingLiveWrite = nil
+        guard let session = liveSession, session.id == recording.id else { return }
+        recording.exportedFolderName = session.folderName
+
+        let includeAudio = RecordingContentPreference.current.includesAudio
+        if includeAudio {
+            await copyLiveAudio(session: session, from: recording.audioURL)
+        }
+        await writeLive(
+            session: session,
+            lines: lines,
+            elapsed: recording.duration,
+            status: .processing,
+            audioFileName: includeAudio ? Self.exportedAudioName : nil
+        )
+        liveSession = nil
+    }
+
+    /// Force-quit leaves `status: recording` on disk. Call on launch when
+    /// nothing is capturing so agents stop waiting on a meeting that is over.
+    func markAbandonedLiveTranscripts() async {
+        guard isConfigured, liveSession == nil else { return }
+        do {
+            let (folder, securityScoped) = try await resolveDestination()
+            defer { if securityScoped { folder.stopAccessingSecurityScopedResource() } }
+            _ = try await Task.detached {
+                try LiveExportWriter(root: folder).markAbandonedLiveTranscripts()
+            }.value
+        } catch {}
+    }
 
     /// Writes the recording's folder; returns the primary exported URL.
     /// Re-exports overwrite the previous folder rather than minting `-2`
     /// copies; fresh exports get a collision-safe name.
     @discardableResult
     func export(_ recording: Recording) async throws -> URL {
-        let folder: URL
-        let securityScoped: Bool
-        if usesLocalFolder {
-            guard let url = Self.localDocumentsURL() else {
-                folderState = .needsRepick(lastKnownName: Self.localFolderDisplayName)
-                throw ExportError.folderRevoked
-            }
-            folderState = .ready(name: Self.localFolderDisplayName)
-            folder = url
-            securityScoped = false
-        } else if usesICloudContainer {
-            // No security scope: the container is the app's own. Resolution
-            // happens off-main (the ubiquity lookup can block).
-            guard let url = await Task.detached(operation: { () -> URL? in
-                guard let documents = Self.ubiquityDocumentsURL() else { return nil }
-                try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
-                return documents
-            }).value else {
-                folderState = .needsRepick(lastKnownName: Self.iCloudFolderDisplayName)
-                throw ExportError.folderRevoked
-            }
-            folderState = .ready(name: Self.iCloudFolderDisplayName)
-            folder = url
-            securityScoped = false
-        } else {
-            folder = try beginFolderAccess()
-            securityScoped = true
-        }
+        let (folder, securityScoped) = try await resolveDestination()
         defer { if securityScoped { folder.stopAccessingSecurityScopedResource() } }
 
         let preference = RecordingContentPreference.current
@@ -266,6 +330,98 @@ final class ExportService {
         try await Self.writeWithRetry(data, to: markdownURL)
 
         return markdownURL
+    }
+
+    // MARK: - Destination
+
+    /// Resolves the active export root and begins security-scoped access when
+    /// the destination is a user-picked folder. Caller must stop access on
+    /// the URL when `securityScoped` is true.
+    private func resolveDestination() async throws -> (folder: URL, securityScoped: Bool) {
+        if usesLocalFolder {
+            guard let url = Self.localDocumentsURL() else {
+                folderState = .needsRepick(lastKnownName: Self.localFolderDisplayName)
+                throw ExportError.folderRevoked
+            }
+            folderState = .ready(name: Self.localFolderDisplayName)
+            return (url, false)
+        }
+        if usesICloudContainer {
+            // No security scope: the container is the app's own. Resolution
+            // happens off-main (the ubiquity lookup can block).
+            guard let url = await Task.detached(operation: { () -> URL? in
+                guard let documents = Self.ubiquityDocumentsURL() else { return nil }
+                try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+                return documents
+            }).value else {
+                folderState = .needsRepick(lastKnownName: Self.iCloudFolderDisplayName)
+                throw ExportError.folderRevoked
+            }
+            folderState = .ready(name: Self.iCloudFolderDisplayName)
+            return (url, false)
+        }
+        return (try beginFolderAccess(), true)
+    }
+
+    private func flushLiveWrite() async {
+        liveWriteTask = nil
+        guard let session = liveSession, let pending = pendingLiveWrite else { return }
+        pendingLiveWrite = nil
+        await writeLive(
+            session: session,
+            lines: pending.lines,
+            elapsed: pending.elapsed,
+            status: .recording,
+            audioFileName: nil
+        )
+        if pendingLiveWrite != nil, liveWriteTask == nil {
+            liveWriteTask = Task { [weak self] in
+                await self?.flushLiveWrite()
+            }
+        }
+    }
+
+    private func writeLive(
+        session: LiveSession,
+        lines: [TimedLine],
+        elapsed: TimeInterval,
+        status: LiveTranscriptStatus,
+        audioFileName: String?
+    ) async {
+        let document = MarkdownDocument(
+            title: session.title,
+            recorded: session.startedAt,
+            duration: elapsed,
+            transcript: TranscriptRenderer.markdown(lines: lines),
+            summary: nil,
+            audioFileName: audioFileName,
+            device: MarkdownDocument.currentDevice(),
+            generator: MarkdownDocument.currentGenerator(),
+            language: session.language,
+            status: status
+        )
+        let data = Data(document.rendered().utf8)
+        do {
+            let (folder, securityScoped) = try await resolveDestination()
+            defer { if securityScoped { folder.stopAccessingSecurityScopedResource() } }
+            let url = folder.appending(path: session.folderName)
+                .appending(path: Self.exportedTranscriptName)
+            try await Self.writeWithRetry(data, to: url)
+        } catch {
+            // Best effort. The next finalized line, or finishLiveSession, retries.
+        }
+    }
+
+    private func copyLiveAudio(session: LiveSession, from source: URL) async {
+        do {
+            let (folder, securityScoped) = try await resolveDestination()
+            defer { if securityScoped { folder.stopAccessingSecurityScopedResource() } }
+            let destination = folder.appending(path: session.folderName)
+                .appending(path: Self.exportedAudioName)
+            try await Task.detached {
+                try Self.coordinatedCopy(from: source, to: destination)
+            }.value
+        } catch {}
     }
 
     // MARK: - Bookmark resolution
@@ -345,10 +501,7 @@ final class ExportService {
             writingItemAt: destination, options: .forReplacing, error: &coordinationError
         ) { actualURL in
             do {
-                if FileManager.default.fileExists(atPath: actualURL.path(percentEncoded: false)) {
-                    try FileManager.default.removeItem(at: actualURL)
-                }
-                try FileManager.default.copyItem(at: source, to: actualURL)
+                try LiveExportWriter.replaceFile(copying: source, to: actualURL)
             } catch { copyError = error }
         }
         if let coordinationError { throw coordinationError }

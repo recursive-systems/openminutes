@@ -21,6 +21,13 @@ already carries the title, so a reader can glob `*/transcript.md` across a
 library without parsing anything. Collisions get `-2`, `-3` suffixes on the
 folder.
 
+While a recording is still in progress, the same `transcript.md` is written
+into that folder and rewritten as speech arrives. It is the same path the
+finished file will occupy. The live file is never deleted first: the
+canonical transcript overwrites it in place, so a reader never sees a gap
+and never sees two transcripts for one recording. The optional `status`
+key is how a reader tells the two apart.
+
 ## The file
 
 `transcript.md` is one UTF-8 markdown file:
@@ -63,6 +70,39 @@ audio: audio.m4a
 | `language` | no | BCP-47 tag | Language of the `## Transcript` body (e.g. `en-US`, `es-ES`). Present whenever a transcript is and the writer knows the language. Absent on audio-only files, and on transcripts produced before the writer tracked language. |
 | `speakers` | no | map | Speaker ID → display name. Present only when speaker labels were produced. The transcript body prefixes each line with the speaker's *display name*, and this map repeats the mapping. That redundancy is deliberate: chunking a file for a language model routinely separates the body from its frontmatter, and a body that only carried IDs would lose its meaning. The map is what tells a reader which ID is the owner (`s1` when a voice is enrolled) and disambiguates two speakers sharing a name. Lines with no confident speaker carry no prefix. |
 | `audio` | no | string | Filename of the sibling audio file in the same folder, always `audio.m4a`. Present only when the user keeps audio. |
+| `status` | no | string | Present only while this file is not the finished export. `recording`: capture is still running and the body will grow. `processing`: capture has stopped and the canonical transcript has not yet replaced this file. `interrupted`: capture ended without a clean stop (the app was killed). Absent on a finished file. Duration is elapsed-so-far while any of these is set. There is no summary and no speaker labels on a live file. Readers that do not understand `status` still see a valid transcript of whatever has been captured; they must not assume it is complete. |
 
 Readers MUST ignore unknown keys; writers targeting version 1 MUST NOT
 require keys beyond these.
+
+## In-progress files
+
+An in-progress `transcript.md` is a finished file with `status` set and with
+the sections that do not exist yet omitted. Same folder, same filename,
+same frontmatter keys otherwise:
+
+```markdown
+---
+openminutes: 1
+spec: https://github.com/recursive-systems/openminutes/blob/main/FILE-FORMAT.md
+title: Recording Aug 23, 2026 at 2:09 PM
+recorded: 2026-08-23T14:09:00-05:00
+duration: 84
+device: iPhone17,1
+generator: OpenMinutes 1.0 (build 42)
+status: recording
+language: en-US
+---
+
+## Transcript
+[00:00:04] Let's take the migration this week.
+[00:00:12] I'll file the ticket after this.
+```
+
+Writers replace this file atomically. They do not write a second file
+alongside it, and they do not remove it before the replacement exists.
+When capture stops, `status` becomes `processing` and `audio.m4a` may
+appear as a sibling. When the canonical transcript is ready, the same
+`transcript.md` is overwritten without a `status` key. A title generated
+after the first write may rename the folder; the file inside moves with
+it rather than being copied.

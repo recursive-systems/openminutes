@@ -30,6 +30,11 @@ A folder may hold either file or both. Glob
 holding audio and no transcript mean the user kept audio only, which is not
 an empty library.
 
+A `transcript.md` can appear while the meeting is still happening. It is
+the same path the finished file will occupy, rewritten in place as speech
+arrives, never deleted first. See **In-progress recordings** below before
+treating a newly appeared file as complete.
+
 If you do not know where the library is, check these first, then ask. Use the
 real paths, not the Finder display names the user will say out loud.
 
@@ -91,6 +96,7 @@ audio: audio.m4a
 | `language` | BCP-47 tag of the transcript body. Absent on audio-only recordings and on older transcripts. |
 | `speakers` | Speaker ID to display name. Present only when speaker labels ran. |
 | `audio` | Filename of the sibling audio file. Present only when audio was kept. |
+| `status` | Present only while this file is not the finished export. See **In-progress recordings**. |
 
 Two sections follow: `## Summary` (optional, absent when the user turned
 summaries off or the device could not run them) and `## Transcript`.
@@ -99,6 +105,36 @@ Each transcript line is `[HH:MM:SS] text`, with `Speaker Name: ` between the
 timestamp and the text when a speaker was identified. Timestamps are offsets
 from the start of the recording, not clock times. Add them to `recorded` to
 get a wall-clock moment.
+
+## In-progress recordings
+
+A `status` key means this file is not the meeting of record. Keep reading it.
+Come back. Do not treat duration, the body, or the absence of a summary as
+final.
+
+| `status` | Meaning |
+|---|---|
+| `recording` | The meeting is still happening. The body will grow. |
+| `processing` | Capture has stopped. The canonical transcript, speakers, and summary have not replaced this file yet. |
+| `interrupted` | Capture ended without a clean stop (force-quit). What is here is all there will be until the user records again. |
+
+When `status` disappears, the same path is the finished export. OpenMinutes
+overwrites `transcript.md` in place. It does not delete the live file first
+and it does not write a second transcript next to it, so a reader never sees
+a gap and never sees two files for one recording. The folder name may change
+once a title is generated; the file moves with the folder rather than being
+copied.
+
+Duration while `status` is set is elapsed so far, not the final length.
+There is no `## Summary` yet, and no speaker labels. Cite a live line the
+same way you cite a finished one (title and timestamp), and say the
+recording was still in progress if that matters to the answer.
+
+Poll. iCloud Drive and similar providers are not a live stream: a rewrite on
+the phone can take seconds, sometimes longer, to show up on a computer. "On
+My iPhone" never leaves the phone. If the file still says `recording` and
+its contents have not grown for a long time, it may have been interrupted
+and not yet marked so.
 
 ## What to be careful about
 

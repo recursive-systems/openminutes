@@ -29,6 +29,9 @@ struct MarkdownDocument {
     /// reader resolves names here instead of parsing prose, and a rename
     /// touches one line rather than every entry.
     var speakers: [String: String] = [:]
+    /// Present only while this file is not the finished export. Omit on a
+    /// completed recording so existing readers keep seeing the same document.
+    var status: LiveTranscriptStatus? = nil
     var timeZone: TimeZone = .current
 
     func rendered() -> String {
@@ -42,6 +45,9 @@ struct MarkdownDocument {
             "device: \(device)",
             "generator: \(generator)",
         ]
+        if let status {
+            lines.append("status: \(status.rawValue)")
+        }
         if let language, transcript != nil {
             lines.append("language: \(language)")
         }
@@ -103,4 +109,35 @@ struct MarkdownDocument {
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "OpenMinutes \(version) (build \(build))"
     }
+
+    /// Rewrites a `status` key inside the frontmatter only. Returns nil when
+    /// that key is not present, so the caller can leave the file untouched
+    /// rather than rewriting every transcript in the library.
+    static func replacingStatus(
+        in markdown: String,
+        from: LiveTranscriptStatus,
+        to: LiveTranscriptStatus
+    ) -> String? {
+        guard markdown.hasPrefix("---") else { return nil }
+        let afterOpen = markdown.dropFirst(3)
+        guard let fence = afterOpen.range(of: "\n---") else { return nil }
+        let frontmatter = afterOpen[..<fence.lowerBound]
+        let needle = "\nstatus: \(from.rawValue)"
+        guard frontmatter.contains(needle) else { return nil }
+        let updated = frontmatter.replacingOccurrences(
+            of: needle, with: "\nstatus: \(to.rawValue)")
+        return "---" + updated + String(afterOpen[fence.lowerBound...])
+    }
+}
+
+/// Present on a transcript that is not the finished export. Absent once the
+/// canonical file has replaced it. Optional in version 1: readers that do
+/// not know the key ignore it, and finished files never write it.
+enum LiveTranscriptStatus: String, Equatable, Sendable {
+    /// Capture is still running and the body will grow.
+    case recording
+    /// Capture has stopped; the canonical transcript has not replaced this file yet.
+    case processing
+    /// Capture ended without a clean stop (the app was killed).
+    case interrupted
 }

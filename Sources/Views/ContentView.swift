@@ -225,7 +225,9 @@ struct ContentView: View {
                 case .startRecording:
                     // Lock Screen widget deep link (accessory widgets can't
                     // run intents directly; they open the app to record).
-                    if recorder.state == .idle { try? recorder.start() }
+                    if recorder.state == .idle {
+                        Task { try? await AppServices.shared.startRecording() }
+                    }
                 case .unsupported:
                     break
                 }
@@ -416,7 +418,11 @@ struct RecordControls: View {
                 .accessibilityLabel(recorder.state == .recording ? "Pause recording" : "Resume recording")
 
                 Button {
-                    if let finished = recorder.stop() { onFinish(finished) }
+                    Task {
+                        if let finished = await AppServices.shared.finishRecording() {
+                            onFinish(finished)
+                        }
+                    }
                 } label: {
                     Image(systemName: "stop.circle.fill")
                         .font(.largeTitle)
@@ -450,7 +456,7 @@ struct RecordControls: View {
                 _ = await AVAudioApplication.requestRecordPermission()
             }
             do {
-                try recorder.start()
+                try await AppServices.shared.startRecording()
             } catch {
                 // Surfaces mic denial and disk-full class failures (PRD edge states).
                 startError = error.localizedDescription

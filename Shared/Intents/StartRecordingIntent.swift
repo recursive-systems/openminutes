@@ -30,7 +30,7 @@ struct StartRecordingIntent: AudioRecordingIntent {
             return .result(dialog: "Already recording.")
         }
 
-        try services.recorder.start()
+        try await services.startRecording()
         services.bootstrapAfterLaunch()
         return .result(dialog: "Recording started.")
         #else

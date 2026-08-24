@@ -42,7 +42,10 @@ open OpenMinutes.xcodeproj   # set your signing team, run on device
 ## Use your notes with an assistant
 
 Transcripts are plain markdown in a folder you control, so anything that
-reads files can read it. [`skills/openminutes`](skills/README.md) is an
+reads files can read it. While a meeting is still going, the same
+`transcript.md` grows in that folder, marked `status: recording` so an
+assistant can read along without waiting for the meeting to end. When
+processing finishes, that file is overwritten in place. [`skills/openminutes`](skills/README.md) is an
 [Agent Skill](https://agentskills.io) that teaches an assistant the format
 and how to answer questions across many meetings at once: "what did I agree
 to in the last two weeks?" The app itself still makes no network calls; the

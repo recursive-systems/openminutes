@@ -52,6 +52,9 @@ struct OpenMinutesApp: App {
                 // Titles whose Foundation Models call failed while the app
                 // was backgrounded get their retry here.
                 services.processor.retryPendingTitles()
+                if services.recorder.state == .idle {
+                    Task { await services.exporter.markAbandonedLiveTranscripts() }
+                }
             }
             if phase == .background {
                 services.processor.scheduleBackgroundProcessingIfNeeded()

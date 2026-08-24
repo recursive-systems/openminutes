@@ -8,8 +8,9 @@ import Speech
 /// Entirely separate from the pipeline that produces the saved transcript:
 /// this one is disposable. The recording is still transcribed properly from
 /// the file afterwards, so nothing here can cost the user their transcript —
-/// if live transcription fails, stalls, or is switched off, the only loss is
-/// the on-screen text.
+/// if live transcription fails, stalls, or is switched off, the on-screen
+/// text and the in-progress export file are what go missing, never the
+/// recording.
 ///
 /// `volatileResults` gives the in-flight guess that firms up as more audio
 /// arrives, which is what makes the display track speech rather than lurch
@@ -18,11 +19,19 @@ import Speech
 @Observable
 final class LiveTranscriptionService {
 
-    /// Settled text, oldest first. Only the tail is shown.
-    private(set) var finalized: [String] = []
+    /// Settled lines, oldest first. Only the tail is shown on screen; the
+    /// live export writes the whole list.
+    private(set) var finalized: [TimedLine] = []
     /// The current in-flight guess, replaced as it firms up.
     private(set) var volatile: String = ""
     private(set) var isRunning = false
+
+    /// Fired on the main actor after a line settles. Live export uses this
+    /// to debounce a rewrite; the UI observes `finalized` directly.
+    var onFinalizedChange: (@MainActor () -> Void)?
+
+    /// Elapsed recording time, used when a live result has no audio range.
+    var elapsedProvider: @MainActor () -> TimeInterval = { 0 }
 
     private let log = Logger(subsystem: "dev.recursivesystems.openminutes", category: "live")
     private var analyzer: SpeechAnalyzer?
@@ -41,7 +50,7 @@ final class LiveTranscriptionService {
             locale: locale,
             transcriptionOptions: [],
             reportingOptions: [.volatileResults],
-            attributeOptions: []
+            attributeOptions: [.audioTimeRange]
         )
         guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
             compatibleWith: [transcriber]
@@ -72,8 +81,11 @@ final class LiveTranscriptionService {
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
                     if result.isFinal {
-                        self.finalized.append(text)
+                        let start = Self.startTime(of: result) ?? self.elapsedProvider()
+                        let end = Self.endTime(of: result) ?? start
+                        self.finalized.append(TimedLine(start: start, end: end, text: text))
                         self.volatile = ""
+                        self.onFinalizedChange?()
                     } else {
                         self.volatile = text
                     }
@@ -105,6 +117,23 @@ final class LiveTranscriptionService {
 
     /// The audio thread reads this without touching the main actor.
     private let feedBox = FeedBox()
+
+    /// Per-run audioTimeRange is the engine's own alignment. Same rule as the
+    /// file transcriber: never infer a token's timing from its neighbours.
+    private static func startTime(of result: SpeechTranscriber.Result) -> TimeInterval? {
+        for run in result.text.runs {
+            if let range = run.audioTimeRange { return range.start.seconds }
+        }
+        return result.range.start.seconds
+    }
+
+    private static func endTime(of result: SpeechTranscriber.Result) -> TimeInterval? {
+        var last: TimeInterval?
+        for run in result.text.runs {
+            if let range = run.audioTimeRange { last = range.end.seconds }
+        }
+        return last ?? result.range.end.seconds
+    }
 }
 
 /// Holds the feed so the nonisolated audio path can reach it without hopping

@@ -12,7 +12,7 @@ struct StopAndProcessIntent: AudioRecordingIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         #if APP_TARGET
         let services = AppServices.shared
-        guard services.recorder.state != .idle, let finished = services.recorder.stop() else {
+        guard services.recorder.state != .idle, let finished = await services.finishRecording() else {
             return .result(dialog: "No recording in progress.")
         }
         services.container.mainContext.insert(finished)

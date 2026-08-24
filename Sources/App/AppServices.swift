@@ -6,7 +6,7 @@ import SwiftData
 /// this process before any scene exists — Action Button cold start).
 ///
 /// `init` must stay allocation-only: an AudioRecordingIntent needs
-/// `AppServices.shared.recorder.start()` to run before the SwiftUI graph
+/// `AppServices.shared.startRecording()` to run before the SwiftUI graph
 /// loads. Anything slow (legacy migration, pipeline resume) belongs in
 /// `bootstrapAfterLaunch()`, which intents call only after recording starts.
 @MainActor
@@ -60,6 +60,12 @@ final class AppServices {
         // Live transcription rides the recorder's buffers. Wired here so the
         // recorder stays AVFoundation-pure and knows nothing about Speech.
         recorder.bufferHandler = { [live] buffer in live.append(buffer) }
+        live.elapsedProvider = { [recorder] in recorder.elapsed }
+        live.onFinalizedChange = { [weak self] in
+            guard let self else { return }
+            self.exporter.scheduleLiveTranscriptWrite(
+                lines: self.live.finalized, elapsed: self.recorder.elapsed)
+        }
 
         recorder.activityHandler = { [liveActivity] event in
             switch event {
@@ -83,5 +89,34 @@ final class AppServices {
         LegacyStoreMigrator.migrateIfNeeded(into: container.mainContext)
         processor.resumeUnfinished()
         processor.retryPendingTitles()
+        if recorder.state == .idle {
+            Task { await exporter.markAbandonedLiveTranscripts() }
+        }
+    }
+
+    /// Single start path for UI, intents, and the lock-screen deep link, so
+    /// the live folder is created even when no scene is on screen.
+    func startRecording() async throws {
+        try recorder.start()
+        await startLiveCapture()
+    }
+
+    /// Stops capture, writes `status: processing` over the live file, copies
+    /// audio if kept, then returns the Recording for insert + pipeline.
+    func finishRecording() async -> Recording? {
+        guard let recording = recorder.stop() else { return nil }
+        await live.stop()
+        await exporter.finishLiveSession(recording: recording, lines: live.finalized)
+        return recording
+    }
+
+    private func startLiveCapture() async {
+        let needsFile = exporter.shouldStreamLiveTranscript
+        if needsFile || LivePreferences.showsTranscript {
+            await live.start(locale: TranscriptionLanguage.current())
+        }
+        if needsFile {
+            await exporter.beginLiveSession(id: recorder.currentID, startedAt: recorder.startedAt)
+        }
     }
 }
