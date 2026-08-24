@@ -140,4 +140,64 @@ struct MarkdownDocumentTests {
         // 14:09 CDT == 04:09 next day JST
         #expect(stamp == "2026-06-10T04:09:00+09:00")
     }
+
+    @Test func statusKeyOmittedOnFinishedFile() {
+        let doc = MarkdownDocument(
+            title: "Note", recorded: Self.fixedDate(), duration: 60,
+            transcript: "[00:00:00] Hi.", summary: nil, audioFileName: nil,
+            device: "x", generator: "y", timeZone: Self.chicago
+        )
+        #expect(!doc.rendered().contains("status:"))
+    }
+
+    @Test func statusKeyRendersWhenSet() {
+        var doc = MarkdownDocument(
+            title: "Note", recorded: Self.fixedDate(), duration: 12,
+            transcript: "[00:00:04] Let's take the migration this week.",
+            summary: nil, audioFileName: nil,
+            device: "iPhone17,1", generator: "OpenMinutes 1.0 (build 42)",
+            language: "en-US", timeZone: Self.chicago
+        )
+        doc.status = .recording
+        let rendered = doc.rendered()
+        #expect(rendered.contains("status: recording\n"))
+        #expect(!rendered.contains("## Summary"))
+        #expect(rendered.contains("## Transcript"))
+
+        doc.status = .processing
+        #expect(doc.rendered().contains("status: processing\n"))
+    }
+
+    @Test func replacingStatusTouchesFrontmatterOnly() throws {
+        let original = """
+        ---
+        openminutes: 1
+        title: Note
+        status: recording
+        ---
+
+        ## Transcript
+        [00:00:00] The status: recording of this meeting is live.
+        """
+        let updated = MarkdownDocument.replacingStatus(
+            in: original, from: .recording, to: .interrupted)
+        let text = try #require(updated)
+        #expect(text.contains("status: interrupted\n"))
+        #expect(text.contains("[00:00:00] The status: recording of this meeting is live."))
+        #expect(!text.contains("status: recording\n"))
+    }
+
+    @Test func replacingStatusReturnsNilWhenAbsent() {
+        let original = """
+        ---
+        openminutes: 1
+        title: Note
+        ---
+
+        ## Transcript
+        [00:00:00] Hi.
+        """
+        #expect(MarkdownDocument.replacingStatus(
+            in: original, from: .recording, to: .interrupted) == nil)
+    }
 }

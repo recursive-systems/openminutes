@@ -633,6 +633,55 @@ struct ProcessingCoordinatorTests {
         #expect(!contents.contains(ExportService.exportedAudioName))
     }
 
+    /// A live `transcript.md` already occupies the recording's folder. The
+    /// pipeline must overwrite that file, not mint a sibling or a second
+    /// folder, and the finished file must not still say it is in progress.
+    @Test func finalExportOverwritesLiveTranscriptInTheSameFolder() async throws {
+        let pipeline = try Pipeline()
+        let recording = pipeline.insertRecording()
+        let liveName = ExportFilename.base(title: recording.title, recorded: recording.createdAt)
+        let liveFolder = pipeline.exporter.folder.appending(path: liveName, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: liveFolder, withIntermediateDirectories: true)
+        let live = MarkdownDocument(
+            title: recording.title,
+            recorded: recording.createdAt,
+            duration: 12,
+            transcript: "[00:00:04] Let's take the migration this week.",
+            summary: nil,
+            audioFileName: nil,
+            device: "x",
+            generator: "y",
+            status: .recording
+        )
+        try Data(live.rendered().utf8).write(
+            to: liveFolder.appending(path: ExportService.exportedTranscriptName),
+            options: .atomic)
+        recording.exportedFolderName = liveName
+
+        await pipeline.coordinator.process(recording)
+
+        let children = try FileManager.default.contentsOfDirectory(
+            at: pipeline.exporter.folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        let folders = children.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        }
+        #expect(folders.count == 1)
+
+        let folderName = try #require(recording.exportedFolderName)
+        let rendered = try String(
+            contentsOf: pipeline.exporter.folder
+                .appending(path: folderName)
+                .appending(path: ExportService.exportedTranscriptName),
+            encoding: .utf8)
+        #expect(!rendered.contains("status:"))
+        #expect(rendered.contains(pipeline.summarizer.summary))
+        #expect(rendered.contains("## Transcript"))
+        #expect(recording.status == .done)
+    }
+
     @Test func reExportOverwritesInPlace() async throws {
         let pipeline = try Pipeline()
         let recording = pipeline.insertRecording()

@@ -72,8 +72,10 @@ final class RecorderService {
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
     private var timer: Timer?
-    private var currentID = UUID()
-    private var startedAt = Date()
+    /// Identity of the in-flight capture, so live export can name the folder
+    /// before `stop()` produces a `Recording`.
+    private(set) var currentID = UUID()
+    private(set) var startedAt = Date()
     private var url: URL?
     private var observers: [NSObjectProtocol] = []
     private var isTapInstalled = false

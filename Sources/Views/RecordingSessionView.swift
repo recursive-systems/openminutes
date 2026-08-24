@@ -3,6 +3,7 @@ import SwiftUI
 struct RecordingSessionView: View {
     @Bindable var recorder: RecorderService
     @Environment(LiveTranscriptionService.self) private var live
+    @Environment(ExportService.self) private var exporter
     var onFinish: (Recording) -> Void
     /// Persisted: the screen reopens on whichever view was last used.
     @AppStorage(LivePreferences.showsTranscriptKey) private var showsTranscript = false
@@ -52,7 +53,10 @@ struct RecordingSessionView: View {
                     // the same glance means neither gets read.
                     Group {
                         if showsTranscript {
-                            LiveTranscriptView(finalized: live.finalized, volatile: live.volatile)
+                            LiveTranscriptView(
+                                finalized: live.finalized.map(\.text),
+                                volatile: live.volatile
+                            )
                                 .padding(.horizontal, 16)
                         } else {
                             LiveWaveform(levels: recorder.recentAudioLevels, isPaused: isPaused)
@@ -77,18 +81,17 @@ struct RecordingSessionView: View {
             }
             .foregroundStyle(.primary)
         }
-        // Transcribing only runs while its view is on screen, so choosing the
-        // waveform costs nothing. Switching mid-recording starts from that
-        // moment — earlier speech is in the saved transcript regardless.
+        // Live transcription is session-scoped when the live file is being
+        // written (an export destination is configured). The toggle then
+        // only changes what this screen shows. Without a destination it
+        // still starts and stops with the transcript view, so choosing the
+        // waveform costs nothing.
         .task(id: showsTranscript) {
             if showsTranscript {
                 await live.start(locale: TranscriptionLanguage.current())
-            } else {
+            } else if !exporter.shouldStreamLiveTranscript {
                 await live.stop()
             }
-        }
-        .onDisappear {
-            Task { await live.stop() }
         }
     }
 
@@ -127,8 +130,10 @@ struct RecordingSessionView: View {
 
             if isPaused {
                 Button {
-                    if let finished = recorder.stop() {
-                        onFinish(finished)
+                    Task {
+                        if let finished = await AppServices.shared.finishRecording() {
+                            onFinish(finished)
+                        }
                     }
                 } label: {
                     Image(systemName: "checkmark")
@@ -212,4 +217,5 @@ private struct RecordingSessionBackground: View {
     let recorder = RecorderService()
     RecordingSessionView(recorder: recorder) { _ in }
         .environment(LiveTranscriptionService())
+        .environment(ExportService())
 }
