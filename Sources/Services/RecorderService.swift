@@ -40,6 +40,7 @@ final class RecorderService {
     enum RecorderError: Error, LocalizedError {
         case microphoneDenied
         case engineUnavailable
+        case alreadyRecording
 
         var errorDescription: String? {
             switch self {
@@ -47,6 +48,8 @@ final class RecorderService {
                 "Microphone access is off. Enable it in Settings → Privacy & Security → Microphone."
             case .engineUnavailable:
                 "The microphone couldn't be started. Try again."
+            case .alreadyRecording:
+                "A recording is already running."
             }
         }
     }
@@ -74,6 +77,9 @@ final class RecorderService {
     private var timer: Timer?
     private var currentID = UUID()
     private var startedAt = Date()
+    /// What the link that started this recording asked for, applied when it
+    /// stops. Empty for the record button, the widget and intents.
+    private var request = RecordRequest()
     private var url: URL?
     private var observers: [NSObjectProtocol] = []
     private var isTapInstalled = false
@@ -93,7 +99,10 @@ final class RecorderService {
         }
     }
 
-    func start() throws {
+    func start(_ request: RecordRequest = RecordRequest()) throws {
+        // A second start over a live capture would replace its file and
+        // engine state, leaving the first recording with nothing to stop.
+        guard state == .idle else { throw RecorderError.alreadyRecording }
         guard AVAudioApplication.shared.recordPermission != .denied else {
             throw RecorderError.microphoneDenied
         }
@@ -138,6 +147,7 @@ final class RecorderService {
         engine.prepare()
         try engine.start()
 
+        self.request = request
         state = .recording
         captureFailure = nil
         startTimer()
@@ -205,13 +215,30 @@ final class RecorderService {
         try? AVAudioSession.sharedInstance().setActive(false)
         activityHandler?(.stopped)
         self.url = nil
+        let request = self.request
+        self.request = RecordRequest()
 
-        return Recording(
-            id: currentID,
-            title: Recording.defaultTitle(for: startedAt),
-            audioFileName: url.lastPathComponent,
+        return Self.finishedRecording(
+            id: currentID, startedAt: startedAt, audioFileName: url.lastPathComponent,
+            duration: duration, request: request)
+    }
+
+    /// Split out of `stop()` so what a record link does to the recording is
+    /// testable without a microphone.
+    static func finishedRecording(
+        id: UUID, startedAt: Date, audioFileName: String,
+        duration: TimeInterval, request: RecordRequest
+    ) -> Recording {
+        Recording(
+            id: id,
+            title: request.title ?? Recording.defaultTitle(for: startedAt),
+            audioFileName: audioFileName,
             createdAt: startedAt,
-            duration: duration
+            duration: duration,
+            // A title the caller chose is the user's intent, not a
+            // placeholder, so it must never be replaced by a generated one.
+            titleNeedsGeneration: request.title == nil,
+            ref: request.ref
         )
     }
 

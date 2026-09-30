@@ -61,11 +61,13 @@ before you try to read.
 ---
 openminutes: 1
 spec: https://github.com/recursive-systems/openminutes/blob/main/FILE-FORMAT.md
+id: 7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c
 title: Standup with platform team
 recorded: 2026-06-09T14:09:00-05:00
 duration: 1860
 device: iPhone17,1
 generator: OpenMinutes 1.0 (build 42)
+ref: abc123
 language: en-US
 speakers:
   s1: Bradley Golden
@@ -83,11 +85,13 @@ audio: audio.m4a
 
 | Key | Meaning |
 |---|---|
-| `openminutes` | Format version. This skill describes version `1`. |
+| `openminutes` | Format version. This skill describes version `1`. If a file has a higher number, read the keys you know and tell the user it is in a newer format than this skill covers. |
 | `spec` | URL of the full format contract. Fetch it if you hit something here does not explain. |
+| `id` | Stable identifier for the recording. It survives renames and re-exports, so use it, not the title or folder name, to tell whether two files are the same recording. Absent on older files. |
 | `title` | User-visible title. May be user-written or model-generated. |
 | `recorded` | ISO 8601 start time with the device's local UTC offset. Use this, not the file's mtime. |
 | `duration` | Length in whole seconds. |
+| `ref` | Opaque value from whatever app started the recording, written back unchanged. Only that app knows what it means; do not guess. Absent when the recording was started in OpenMinutes itself. |
 | `language` | BCP-47 tag of the transcript body. Absent on audio-only recordings and on older transcripts. |
 | `speakers` | Speaker ID to display name. Present only when speaker labels ran. |
 | `audio` | Filename of the sibling audio file. Present only when audio was kept. |
@@ -149,9 +153,9 @@ afterwards and the file cannot. When they disagree, `title` and `recorded`
 are authoritative. Use the folder name for cheap date filtering, then
 confirm from the frontmatter of anything you actually cite.
 
-**Absent frontmatter keys are normal.** `language`, `speakers`, and `audio`
-are all optional. Ignore keys you do not recognise, since later format versions
-may add them.
+**Absent frontmatter keys are normal.** `id`, `ref`, `language`, `speakers`,
+and `audio` are all optional. Ignore keys you do not recognise, since the
+format adds optional keys without changing its version.
 
 ## Answering questions
 

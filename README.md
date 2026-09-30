@@ -48,10 +48,53 @@ and how to answer questions across many meetings at once: "what did I agree
 to in the last two weeks?" The app itself still makes no network calls; the
 skill runs in your assistant, on your files, when you ask it to.
 
+## Starting a recording from another app
+
+Another app, a shortcut, or a link can start a recording by opening:
+
+```
+openminutes://record?title=Weekly%20sync&ref=abc123
+```
+
+Both parameters are optional, and plain `openminutes://record` just starts
+recording.
+
+- `title` becomes the recording's title, and OpenMinutes does not generate
+  one of its own. Spaces at either end are trimmed.
+- `ref` is any value the caller wants back. It is written byte for byte to
+  the `ref` key of the exported file (never trimmed), next to the
+  recording's `id`, so the caller can find the recording it asked for when
+  the file lands in the folder. OpenMinutes never interprets it.
+
+What the link accepts:
+
+- Percent-encode both values. `+` is a literal plus, not a space.
+- Each value can be at most 200 Unicode scalars (code points, the unit JSON
+  Schema's `maxLength` counts, so an accented letter written as a letter
+  plus a combining mark counts as two).
+- Control characters (line breaks, tabs, and the rest of Unicode category
+  Cc) are not accepted in either value.
+- An empty value (`title=`) counts as absent, and so does a title of only
+  spaces.
+- If a parameter appears more than once, the first one is used.
+- Other parameters are ignored, so the link never needs a version.
+
+A value that is too long or holds control characters is refused with a
+message on screen, and nothing is recorded. It is never cut short. If a
+recording is already running, plain `openminutes://record` does nothing
+beyond opening the app. A link that carries a `title` or `ref` is refused
+with a message instead, because applying it to the running recording would
+file that recording under something it is not. Nothing is sent back to the
+caller: the file in the folder is the answer.
+
+Any recorder can offer the same by accepting `<its scheme>://record` with
+these two parameters and writing the keys described in the
+[file format](FILE-FORMAT.md).
+
 ## Docs
 
 - [**Vision**](VISION.md): what this project is for, and what will not be merged
-- [**File format**](FILE-FORMAT.md): the public contract; any tool can read or emit OpenMinutes files
+- [**File format**](FILE-FORMAT.md): the public contract; any tool can read or emit OpenMinutes files ([JSON Schema](FILE-FORMAT.schema.json) for the frontmatter)
 - [Agent & contributor instructions](AGENTS.md): constraints, architecture, and the platform edges worth knowing before changing anything
 - [Installing from source](INSTALL.md)
 - [Agent Skill](skills/README.md): read your recordings with the assistant you already use

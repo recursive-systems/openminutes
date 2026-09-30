@@ -249,16 +249,8 @@ final class ExportService {
         }
 
         let document = MarkdownDocument(
-            title: recording.title,
-            recorded: recording.createdAt,
-            duration: recording.duration,
-            transcript: recording.transcript,
-            summary: recording.summary,
-            audioFileName: preference.includesAudio ? Self.exportedAudioName : nil,
-            device: MarkdownDocument.currentDevice(),
-            generator: MarkdownDocument.currentGenerator(),
-            language: recording.transcriptLanguage,
-            speakers: recording.speakerNames
+            recording: recording,
+            audioFileName: preference.includesAudio ? Self.exportedAudioName : nil
         )
 
         let data = Data(document.rendered().utf8)

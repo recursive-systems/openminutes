@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/recursive-systems/openminutes/main/FILE-FORMAT.schema.json",
+  "title": "OpenMinutes transcript frontmatter, version 1",
+  "description": "The YAML frontmatter of an OpenMinutes transcript.md, as JSON. The contract is FILE-FORMAT.md; this schema describes it for checkers and other writers. Load the YAML with a YAML 1.2 core schema loader so recorded stays a string. Unknown keys are allowed, because readers must ignore them.",
+  "type": "object",
+  "required": ["openminutes", "title", "recorded", "duration", "device", "generator"],
+  "additionalProperties": true,
+  "properties": {
+    "openminutes": {
+      "description": "Format major version. This schema describes version 1; a reader that meets a higher value reads the keys it knows and says the file is in a newer format.",
+      "type": "integer",
+      "const": 1
+    },
+    "spec": {
+      "description": "URL of FILE-FORMAT.md, so a reader that has never seen the format can fetch the contract.",
+      "type": "string",
+      "format": "uri"
+    },
+    "id": {
+      "description": "Stable identifier minted once by the writer and never changed. Opaque: compare it, do not parse it. OpenMinutes writes a lowercase UUID. Added 2026-09-30.",
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "description": "User-visible title.",
+      "type": "string"
+    },
+    "recorded": {
+      "description": "Start of recording, ISO 8601 with the device's local UTC offset, e.g. 2026-06-09T14:09:00-05:00.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration": {
+      "description": "Recording length in whole seconds.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "device": {
+      "description": "Hardware model identifier, e.g. iPhone17,1.",
+      "type": "string"
+    },
+    "generator": {
+      "description": "Writing app and version, e.g. OpenMinutes 1.0 (build 42).",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Opaque value supplied by whoever asked for the recording, written back exactly as received. Meaningful only to the tool that supplied it. Added 2026-09-30.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
+    },
+    "language": {
+      "description": "BCP-47 tag of the transcript body, e.g. en-US. Absent on audio-only files. The pattern is RFC 5646's Language-Tag grammar, case-insensitive: it checks that a tag is well-formed, not that its subtags are registered.",
+      "type": "string",
+      "pattern": "^(?:(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WYZa-wyz](?:-[A-Za-z0-9]{2,8})+)*(?:-[Xx](?:-[A-Za-z0-9]{1,8})+)?|[Xx](?:-[A-Za-z0-9]{1,8})+|[Ee][Nn]-[Gg][Bb]-[Oo][Ee][Dd]|[Ii]-[Aa][Mm][Ii]|[Ii]-[Bb][Nn][Nn]|[Ii]-[Dd][Ee][Ff][Aa][Uu][Ll][Tt]|[Ii]-[Ee][Nn][Oo][Cc][Hh][Ii][Aa][Nn]|[Ii]-[Hh][Aa][Kk]|[Ii]-[Kk][Ll][Ii][Nn][Gg][Oo][Nn]|[Ii]-[Ll][Uu][Xx]|[Ii]-[Mm][Ii][Nn][Gg][Oo]|[Ii]-[Nn][Aa][Vv][Aa][Jj][Oo]|[Ii]-[Pp][Ww][Nn]|[Ii]-[Tt][Aa][Oo]|[Ii]-[Tt][Aa][Yy]|[Ii]-[Tt][Ss][Uu]|[Ss][Gg][Nn]-[Bb][Ee]-[Ff][Rr]|[Ss][Gg][Nn]-[Bb][Ee]-[Nn][Ll]|[Ss][Gg][Nn]-[Cc][Hh]-[Dd][Ee])$"
+    },
+    "speakers": {
+      "description": "Speaker ID to display name. Present only when speaker labels were produced.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "audio": {
+      "description": "Filename of the sibling audio file in the same folder. Present only when the user keeps audio.",
+      "type": "string",
+      "const": "audio.m4a"
+    }
+  }
+}

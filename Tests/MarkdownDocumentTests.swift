@@ -18,6 +18,7 @@ struct MarkdownDocumentTests {
 
     @Test func rendersSpecExampleExactly() {
         let doc = MarkdownDocument(
+            id: "7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c",
             title: "Standup with platform team",
             recorded: Self.fixedDate(),
             duration: 1860,
@@ -28,17 +29,20 @@ struct MarkdownDocumentTests {
             generator: "OpenMinutes 1.0 (build 42)",
             language: "en-US",
             speakers: ["s1": "Bradley Golden", "s2": "Speaker 2"],
+            ref: "abc123",
             timeZone: Self.chicago
         )
         let expected = """
         ---
         openminutes: 1
         spec: https://github.com/recursive-systems/openminutes/blob/main/FILE-FORMAT.md
+        id: 7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c
         title: Standup with platform team
         recorded: 2026-06-09T14:09:00-05:00
         duration: 1860
         device: iPhone17,1
         generator: OpenMinutes 1.0 (build 42)
+        ref: abc123
         language: en-US
         speakers:
           s1: Bradley Golden
@@ -139,5 +143,178 @@ struct MarkdownDocumentTests {
         let stamp = MarkdownDocument.iso8601(Self.fixedDate(), timeZone: tokyo)
         // 14:09 CDT == 04:09 next day JST
         #expect(stamp == "2026-06-10T04:09:00+09:00")
+    }
+
+    /// Both keys are optional in the format: a writer that has neither (an
+    /// older build, another app) produces a file without them, not empty ones.
+    @Test func idAndRefOmittedWhenAbsent() {
+        let doc = MarkdownDocument(
+            title: "Note", recorded: Self.fixedDate(), duration: 60,
+            transcript: "[00:00:00] Hi.", summary: nil, audioFileName: nil,
+            device: "x", generator: "y", timeZone: Self.chicago
+        )
+        #expect(!doc.rendered().contains("\nid:"))
+        #expect(!doc.rendered().contains("\nref:"))
+    }
+
+    /// `ref` is described by what the caller sent, so it is written even on
+    /// an audio-only file, unlike the keys that describe the transcript.
+    @Test func refWrittenOnAudioOnlyFiles() {
+        let doc = MarkdownDocument(
+            title: "Note", recorded: Self.fixedDate(), duration: 60,
+            transcript: nil, summary: nil, audioFileName: "audio.m4a",
+            device: "x", generator: "y", ref: "abc", timeZone: Self.chicago
+        )
+        #expect(doc.rendered().contains("\nref: abc\n"))
+    }
+
+    @Test func documentForARecordingCarriesItsIdTitleAndRef() throws {
+        let id = try #require(UUID(uuidString: "7C3A5B1E-2F4D-4E8A-9B6C-0D1E2F3A4B5C"))
+        let recording = Recording(
+            id: id, title: "Coffee", audioFileName: "coffee.m4a",
+            createdAt: Self.fixedDate(), duration: 60, transcript: "[00:00:00] Hi.",
+            titleNeedsGeneration: false, transcriptLanguage: "en-US", ref: "abc"
+        )
+        let doc = MarkdownDocument(recording: recording, audioFileName: nil, device: "x", generator: "y")
+        #expect(doc.id == "7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c")
+        #expect(doc.title == "Coffee")
+        #expect(doc.ref == "abc")
+        #expect(doc.language == "en-US")
+        let rendered = doc.rendered()
+        #expect(rendered.contains("\nid: 7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c\n"))
+        #expect(rendered.contains("\ntitle: Coffee\n"))
+        #expect(rendered.contains("\nref: abc\n"))
+    }
+
+    /// The ref must come back from a YAML parser as the same string, so any
+    /// value a parser would read as a number, boolean, null or date is quoted.
+    @Test func valuesAParserWouldRetypeAreQuoted() {
+        for value in ["123", "-7", "0x1F", "0o17", "1e3", "3.14", ".5", ".inf", "-.Inf", ".NaN",
+                      "true", "False", "yes", "No", "on", "OFF", "y", "~", "null", "NULL",
+                      "2026-06-09", "=", "<<", "?", ",x", "]"] {
+            #expect(MarkdownDocument.yamlValue(value) == "\"\(value)\"", "\(value)")
+        }
+        for value in ["abc", "Coffee", "7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c", "1.2.3",
+                      "2026-06-09 standup", "Nobody", "123abc", "iPhone17,1"] {
+            #expect(MarkdownDocument.yamlValue(value) == value, "\(value)")
+        }
+    }
+
+    @Test func tabsAndCarriageReturnsAreEscapedInsideQuotes() {
+        #expect(MarkdownDocument.yamlValue("a\tb") == "\"a\\tb\"")
+        #expect(MarkdownDocument.yamlValue("a\rb") == "\"a\\rb\"")
+    }
+
+    /// A ref can be any Unicode string that passed the route. What YAML
+    /// cannot hold literally goes out as an escape, never as a raw byte a
+    /// parser would reject (Scripts/yaml-roundtrip.sh checks the same
+    /// values against a real parser).
+    @Test func nonPrintableCharactersAreEscaped() {
+        let cases: [(String, String)] = [
+            ("\u{FFFF}", "\"\\uFFFF\""),
+            ("a\u{FFFE}b", "\"a\\uFFFEb\""),
+            ("\u{0}", "\"\\u0000\""),
+            ("bell\u{7}", "\"bell\\u0007\""),
+            ("del\u{7F}", "\"del\\u007F\""),
+            ("c1\u{80}", "\"c1\\u0080\""),
+            ("nel\u{85}", "\"nel\\u0085\""),
+            ("ls\u{2028}", "\"ls\\u2028\""),
+            ("ps\u{2029}", "\"ps\\u2029\""),
+            ("\u{FEFF}bom", "\"\\uFEFFbom\""),
+        ]
+        for (value, expected) in cases {
+            #expect(MarkdownDocument.yamlValue(value) == expected, "\(value.unicodeScalars.map { $0.value })")
+        }
+        // Printable non-ASCII stays literal and unquoted.
+        for value in ["Élise", "nbsp\u{A0}here", "emoji \u{1F600}", "\u{E000}", "\u{10FFFF}", "e\u{301}"] {
+            #expect(MarkdownDocument.yamlValue(value) == value)
+        }
+    }
+
+    @Test func renderedFrontmatterHoldsOnlyPrintableCharacters() {
+        let nasty = "a\u{0}\u{7F}\u{85}\u{2028}\u{FEFF}\u{FFFF}\r\n\tz"
+        let doc = MarkdownDocument(
+            id: nasty, title: nasty, recorded: Self.fixedDate(), duration: 60,
+            transcript: "[00:00:00] Hi.", summary: nil, audioFileName: nil,
+            device: "x", generator: "y", speakers: ["s1": nasty], ref: nasty,
+            timeZone: Self.chicago
+        )
+        let frontmatter = doc.rendered().components(separatedBy: "---\n")[1]
+        let offending = frontmatter.unicodeScalars.filter { $0 != "\n" && MarkdownDocument.needsEscape($0) }
+        #expect(offending.isEmpty, "\(offending.map { $0.value })")
+        // One line per key (8 scalars, ref, speakers and its entry): no value broke a line.
+        #expect(frontmatter.split(separator: "\n").count == 11)
+    }
+
+    /// FILE-FORMAT.schema.json is published for other writers and checkers,
+    /// so it must describe every key this writer emits, and require exactly
+    /// the keys the spec calls required. Read from the source tree, which the
+    /// simulator can see.
+    @Test func schemaDescribesEveryKeyTheWriterEmits() throws {
+        let schemaURL = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "FILE-FORMAT.schema.json")
+        let data = try Data(contentsOf: schemaURL)
+        let schema = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        let required = try #require(schema["required"] as? [String])
+
+        let doc = MarkdownDocument(
+            id: "7c3a5b1e-2f4d-4e8a-9b6c-0d1e2f3a4b5c",
+            title: "Everything", recorded: Self.fixedDate(), duration: 60,
+            transcript: "[00:00:00] Hi.", summary: "Sum.", audioFileName: "audio.m4a",
+            device: "x", generator: "y", language: "en-US", speakers: ["s1": "A"],
+            ref: "abc", timeZone: Self.chicago
+        )
+        let frontmatter = doc.rendered()
+            .components(separatedBy: "---\n")[1]
+            .split(separator: "\n")
+        let emitted = Set(frontmatter
+            .filter { !$0.hasPrefix(" ") }
+            .compactMap { $0.split(separator: ":", maxSplits: 1).first.map(String.init) })
+
+        #expect(emitted == Set(properties.keys))
+        #expect(Set(required) == ["openminutes", "title", "recorded", "duration", "device", "generator"])
+        let version = try #require(properties["openminutes"] as? [String: Any])
+        #expect(version["const"] as? Int == MarkdownDocument.formatVersion)
+        let ref = try #require(properties["ref"] as? [String: Any])
+        #expect(ref["maxLength"] as? Int == RecordRequest.maxRefLength)
+    }
+
+    /// The schema's `language` pattern is RFC 5646's Language-Tag grammar.
+    /// A narrower pattern rejected real tags (private use, grandfathered),
+    /// which would make other writers' valid files fail a checker.
+    @Test func schemaLanguagePatternFollowsRFC5646() throws {
+        let schemaURL = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "FILE-FORMAT.schema.json")
+        let schema = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        let language = try #require(properties["language"] as? [String: Any])
+        let pattern = try Regex(try #require(language["pattern"] as? String))
+
+        let wellFormed = [
+            "en", "en-US", "es-ES", "es-419", "zh-Hans-CN", "sr-Latn-RS", "yue-HK", "de-CH-1901",
+            "sl-rozaj-biske", "hy-Latn-IT-arevela", "zh-cmn-Hans-CN", "en-a-bbb-x-a-ccc",
+            "de-DE-u-co-phonebk", "x-private", "X-Whatever-12345678", "en-US-x-twain",
+            "i-klingon", "I-KLINGON", "i-default", "en-GB-oed", "EN-gb-OED", "sgn-BE-FR",
+            "art-lojban", "zh-min-nan", "cel-gaulish", "no-bok", "zh-guoyu", "EN-us",
+            // What this app writes, straight from Foundation.
+            Locale(identifier: "es_ES").identifier(.bcp47),
+            Locale(identifier: "zh_Hans_CN").identifier(.bcp47),
+        ]
+        for tag in wellFormed {
+            #expect(tag.wholeMatch(of: pattern) != nil, "\(tag) should be accepted")
+        }
+        let malformed = [
+            "", "e", "en_US", "en-", "-en", "en--US", "x", "x-", "x-toolongsubtag",
+            "toolonglanguage", "123", "en-US-", "i-notreal", "en-a", "en-a-b", "en US",
+        ]
+        for tag in malformed {
+            #expect(tag.wholeMatch(of: pattern) == nil, "\(tag) should be rejected")
+        }
     }
 }
