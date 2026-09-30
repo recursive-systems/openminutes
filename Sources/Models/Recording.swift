@@ -62,6 +62,11 @@ final class Recording {
     /// re-render the transcript without re-transcribing. `transcript` stays
     /// the rendered form everything else reads.
     var transcriptLines: [TranscriptLine] = []
+    /// The opaque string another app passed in `openminutes://record?ref=`,
+    /// written back unchanged as the exported file's `ref` key. The app never
+    /// interprets it or shows it as anything but a reference. Nil for every
+    /// recording nobody asked for, which also satisfies lightweight migration.
+    var ref: String?
     private var statusRaw: String
     var failureReason: String?
 
@@ -101,12 +106,14 @@ final class Recording {
         transcriptLanguage: String? = nil,
         speakerNames: [String: String] = [:],
         transcriptLines: [TranscriptLine] = [],
+        ref: String? = nil,
         status: ProcessingStatus = .pending,
         failureReason: String? = nil
     ) {
         self.transcriptLanguage = transcriptLanguage
         self.speakerNames = speakerNames
         self.transcriptLines = transcriptLines
+        self.ref = ref
         self.id = id
         self.title = title
         self.audioFileName = audioFileName

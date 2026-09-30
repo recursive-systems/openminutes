@@ -108,14 +108,8 @@ private final class FakeExporter: Exporting {
                     .path(percentEncoded: false), contents: Data())
         }
         let document = MarkdownDocument(
-            title: recording.title,
-            recorded: recording.createdAt,
-            duration: recording.duration,
-            transcript: recording.transcript,
-            summary: recording.summary,
-            audioFileName: preference.includesAudio ? ExportService.exportedAudioName : nil,
-            device: MarkdownDocument.currentDevice(),
-            generator: MarkdownDocument.currentGenerator()
+            recording: recording,
+            audioFileName: preference.includesAudio ? ExportService.exportedAudioName : nil
         )
         let url = recordingFolder.appending(path: ExportService.exportedTranscriptName)
         try Data(document.rendered().utf8).write(to: url, options: .atomic)
@@ -447,6 +441,36 @@ struct ProcessingCoordinatorTests {
         let rendered = try String(contentsOf: exported, encoding: .utf8)
         #expect(!rendered.contains("## Summary"))
         #expect(rendered.contains("## Transcript"))
+    }
+
+    /// `openminutes://record?title=Coffee&ref=abc`, from stop to file: the
+    /// caller's title survives the pipeline (no generated title replaces it),
+    /// the ref comes back unchanged, and the file carries the recording's id.
+    @Test func linkTitleAndRefReachTheExportedFile() async throws {
+        let pipeline = try Pipeline()
+        let recording = Recording(
+            title: "Coffee",
+            audioFileName: "coffee.m4a",
+            duration: 90,
+            titleNeedsGeneration: false,
+            ref: "abc"
+        )
+        pipeline.context.insert(recording)
+
+        await pipeline.coordinator.process(recording)
+
+        #expect(recording.status == .done)
+        #expect(recording.title == "Coffee")
+        #expect(pipeline.summarizer.titleCallCount == 0)
+
+        let folderName = try #require(recording.exportedFolderName)
+        let exported = pipeline.exporter.folder
+            .appending(path: folderName)
+            .appending(path: ExportService.exportedTranscriptName)
+        let rendered = try String(contentsOf: exported, encoding: .utf8)
+        #expect(rendered.contains("\ntitle: Coffee\n"))
+        #expect(rendered.contains("\nref: abc\n"))
+        #expect(rendered.contains("\nid: \(recording.id.uuidString.lowercased())\n"))
     }
 
     @Test func audioOnlyPreferenceSkipsTranscriptionAndSummary() async throws {

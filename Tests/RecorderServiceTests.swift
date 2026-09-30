@@ -37,6 +37,47 @@ struct RecorderServiceTests {
         #expect(file.fileFormat.channelCount == 1)
     }
 
+    /// The same rule without a microphone, so it runs on machines with no
+    /// audio input, where every capture test here fails at `start()`.
+    @Test func finishedRecordingTakesTheLinkTitleAndRef() {
+        let startedAt = Date(timeIntervalSince1970: 1_780_000_000)
+        let linked = RecorderService.finishedRecording(
+            id: UUID(), startedAt: startedAt, audioFileName: "a.m4a", duration: 5,
+            request: RecordRequest(title: "Coffee", ref: "abc"))
+        #expect(linked.title == "Coffee")
+        #expect(linked.ref == "abc")
+        #expect(linked.titleNeedsGeneration == false)
+
+        let plain = RecorderService.finishedRecording(
+            id: UUID(), startedAt: startedAt, audioFileName: "b.m4a", duration: 5,
+            request: RecordRequest(ref: "abc"))
+        #expect(plain.title == Recording.defaultTitle(for: startedAt))
+        #expect(plain.ref == "abc")
+        #expect(plain.titleNeedsGeneration)
+    }
+
+    /// A record link's title and ref land on the finished recording, and a
+    /// caller-chosen title is never queued for replacement by a generated one.
+    @Test func linkRequestAppliesToTheRecordingItStarted() async throws {
+        let recorder = RecorderService()
+        try recorder.start(RecordRequest(title: "Coffee", ref: "abc"))
+        try await Task.sleep(for: .milliseconds(300))
+        let finished = try #require(recorder.stop())
+        defer { try? FileManager.default.removeItem(at: finished.audioURL) }
+        #expect(finished.title == "Coffee")
+        #expect(finished.ref == "abc")
+        #expect(finished.titleNeedsGeneration == false)
+
+        // ...and only that one: the next plain start is back to defaults.
+        try recorder.start()
+        try await Task.sleep(for: .milliseconds(300))
+        let next = try #require(recorder.stop())
+        defer { try? FileManager.default.removeItem(at: next.audioURL) }
+        #expect(next.title.hasPrefix(Recording.defaultTitlePrefix))
+        #expect(next.ref == nil)
+        #expect(next.titleNeedsGeneration)
+    }
+
     /// Pause must not end the recording or reset what was captured.
     @Test func pauseAndResumeKeepsOneFile() async throws {
         let recorder = RecorderService()

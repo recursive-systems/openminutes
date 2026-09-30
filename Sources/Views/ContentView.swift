@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var showFolderPicker = false
     @State private var showAudioPicker = false
     @State private var importError: String?
+    /// Why a record link from another app did not start a recording.
+    @State private var linkError: String?
     @State private var micPermission = AVAudioApplication.shared.recordPermission
     @State private var searchText = ""
 
@@ -201,6 +203,13 @@ struct ContentView: View {
             )) {
                 OnboardingView()
             }
+            // Shown from here only when no recording is running; while one
+            // is, the session cover is on top and presents it instead.
+            .alert("Couldn't Start Recording", isPresented: linkErrorShown(whileRecording: false)) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(linkError ?? "")
+            }
             .fullScreenCover(isPresented: Binding(
                 get: { recorder.state != .idle },
                 set: { _ in }
@@ -211,6 +220,11 @@ struct ContentView: View {
                     processor.enqueue(finished)
                 }
                 .interactiveDismissDisabled()
+                .alert("Couldn't Start Recording", isPresented: linkErrorShown(whileRecording: true)) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(linkError ?? "")
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 // Refresh after returning from Settings → Privacy.
@@ -222,13 +236,48 @@ struct ContentView: View {
                 switch OpenMinutesURLRoute(url: url) {
                 case .importAudio(let fileURL):
                     importAudio(from: fileURL)
-                case .startRecording:
-                    // Lock Screen widget deep link (accessory widgets can't
-                    // run intents directly; they open the app to record).
-                    if recorder.state == .idle { try? recorder.start() }
+                case .startRecording(let request):
+                    // The Lock Screen widget (accessory widgets can't run
+                    // intents directly; they open the app to record), and
+                    // other apps passing a title and ref.
+                    startRecording(from: request)
+                case .rejectedRecordRequest(let problem):
+                    linkError = problem.message
                 case .unsupported:
                     break
                 }
+            }
+        }
+    }
+
+    private func linkErrorShown(whileRecording: Bool) -> Binding<Bool> {
+        Binding(
+            get: { linkError != nil && (recorder.state != .idle) == whileRecording },
+            set: { if !$0 { linkError = nil } }
+        )
+    }
+
+    private func startRecording(from request: RecordRequest) {
+        guard recorder.state == .idle else {
+            // The widget tapped mid-recording just reopens the app. A link
+            // that carried a title or ref is different: dropping it without
+            // a word would leave the caller waiting for a file it will never
+            // get, and applying it to the running recording would file that
+            // recording under something it is not.
+            if !request.isEmpty {
+                linkError = "A recording is already running, so the link from the other app was not used. "
+                    + "Stop this recording, then try again from that app."
+            }
+            return
+        }
+        Task {
+            if AVAudioApplication.shared.recordPermission == .undetermined {
+                _ = await AVAudioApplication.requestRecordPermission()
+            }
+            do {
+                try recorder.start(request)
+            } catch {
+                linkError = error.localizedDescription
             }
         }
     }
