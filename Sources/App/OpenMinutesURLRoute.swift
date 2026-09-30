@@ -107,3 +107,44 @@ private extension OpenMinutesURLRoute.Problem.Parameter {
         }
     }
 }
+
+/// Starts recordings for record links, one at a time.
+///
+/// Asking for microphone permission suspends, and a second link can arrive
+/// in that window. Without a reservation both would see an idle recorder and
+/// both would start, and the second start replaces the first capture's file
+/// and engine with nothing left pointing at the first. The reservation is
+/// held from the first check until `start` returns, and the recorder's state
+/// is checked again after the suspension, because the user may have tapped
+/// record meanwhile.
+@MainActor
+final class RecordLinkStarter {
+    static let busyMessage = "A recording is already running, so the link from the other app was not used. "
+        + "Stop this recording, then try again from that app."
+
+    private(set) var isStarting = false
+
+    /// Returns what to tell the user, or nil when there is nothing to say.
+    /// A bare link (the widget) that finds a recording running says nothing:
+    /// it only reopens the app. A link carrying a title or ref says why it
+    /// was not used, since the caller is waiting for a file.
+    func handle(
+        _ request: RecordRequest,
+        isIdle: () -> Bool,
+        prepare: () async -> Void,
+        start: (RecordRequest) throws -> Void
+    ) async -> String? {
+        let busy = request.isEmpty ? nil : Self.busyMessage
+        guard !isStarting, isIdle() else { return busy }
+        isStarting = true
+        defer { isStarting = false }
+        await prepare()
+        guard isIdle() else { return busy }
+        do {
+            try start(request)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+}

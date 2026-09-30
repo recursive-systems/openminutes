@@ -40,6 +40,7 @@ final class RecorderService {
     enum RecorderError: Error, LocalizedError {
         case microphoneDenied
         case engineUnavailable
+        case alreadyRecording
 
         var errorDescription: String? {
             switch self {
@@ -47,6 +48,8 @@ final class RecorderService {
                 "Microphone access is off. Enable it in Settings → Privacy & Security → Microphone."
             case .engineUnavailable:
                 "The microphone couldn't be started. Try again."
+            case .alreadyRecording:
+                "A recording is already running."
             }
         }
     }
@@ -97,6 +100,9 @@ final class RecorderService {
     }
 
     func start(_ request: RecordRequest = RecordRequest()) throws {
+        // A second start over a live capture would replace its file and
+        // engine state, leaving the first recording with nothing to stop.
+        guard state == .idle else { throw RecorderError.alreadyRecording }
         guard AVAudioApplication.shared.recordPermission != .denied else {
             throw RecorderError.microphoneDenied
         }

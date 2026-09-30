@@ -205,6 +205,47 @@ struct MarkdownDocumentTests {
         #expect(MarkdownDocument.yamlValue("a\rb") == "\"a\\rb\"")
     }
 
+    /// A ref can be any Unicode string that passed the route. What YAML
+    /// cannot hold literally goes out as an escape, never as a raw byte a
+    /// parser would reject (Scripts/yaml-roundtrip.sh checks the same
+    /// values against a real parser).
+    @Test func nonPrintableCharactersAreEscaped() {
+        let cases: [(String, String)] = [
+            ("\u{FFFF}", "\"\\uFFFF\""),
+            ("a\u{FFFE}b", "\"a\\uFFFEb\""),
+            ("\u{0}", "\"\\u0000\""),
+            ("bell\u{7}", "\"bell\\u0007\""),
+            ("del\u{7F}", "\"del\\u007F\""),
+            ("c1\u{80}", "\"c1\\u0080\""),
+            ("nel\u{85}", "\"nel\\u0085\""),
+            ("ls\u{2028}", "\"ls\\u2028\""),
+            ("ps\u{2029}", "\"ps\\u2029\""),
+            ("\u{FEFF}bom", "\"\\uFEFFbom\""),
+        ]
+        for (value, expected) in cases {
+            #expect(MarkdownDocument.yamlValue(value) == expected, "\(value.unicodeScalars.map { $0.value })")
+        }
+        // Printable non-ASCII stays literal and unquoted.
+        for value in ["Élise", "nbsp\u{A0}here", "emoji \u{1F600}", "\u{E000}", "\u{10FFFF}", "e\u{301}"] {
+            #expect(MarkdownDocument.yamlValue(value) == value)
+        }
+    }
+
+    @Test func renderedFrontmatterHoldsOnlyPrintableCharacters() {
+        let nasty = "a\u{0}\u{7F}\u{85}\u{2028}\u{FEFF}\u{FFFF}\r\n\tz"
+        let doc = MarkdownDocument(
+            id: nasty, title: nasty, recorded: Self.fixedDate(), duration: 60,
+            transcript: "[00:00:00] Hi.", summary: nil, audioFileName: nil,
+            device: "x", generator: "y", speakers: ["s1": nasty], ref: nasty,
+            timeZone: Self.chicago
+        )
+        let frontmatter = doc.rendered().components(separatedBy: "---\n")[1]
+        let offending = frontmatter.unicodeScalars.filter { $0 != "\n" && MarkdownDocument.needsEscape($0) }
+        #expect(offending.isEmpty, "\(offending.map { $0.value })")
+        // One line per key (8 scalars, ref, speakers and its entry): no value broke a line.
+        #expect(frontmatter.split(separator: "\n").count == 11)
+    }
+
     /// FILE-FORMAT.schema.json is published for other writers and checkers,
     /// so it must describe every key this writer emits, and require exactly
     /// the keys the spec calls required. Read from the source tree, which the
@@ -239,5 +280,41 @@ struct MarkdownDocumentTests {
         #expect(version["const"] as? Int == MarkdownDocument.formatVersion)
         let ref = try #require(properties["ref"] as? [String: Any])
         #expect(ref["maxLength"] as? Int == RecordRequest.maxRefLength)
+    }
+
+    /// The schema's `language` pattern is RFC 5646's Language-Tag grammar.
+    /// A narrower pattern rejected real tags (private use, grandfathered),
+    /// which would make other writers' valid files fail a checker.
+    @Test func schemaLanguagePatternFollowsRFC5646() throws {
+        let schemaURL = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "FILE-FORMAT.schema.json")
+        let schema = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        let language = try #require(properties["language"] as? [String: Any])
+        let pattern = try Regex(try #require(language["pattern"] as? String))
+
+        let wellFormed = [
+            "en", "en-US", "es-ES", "es-419", "zh-Hans-CN", "sr-Latn-RS", "yue-HK", "de-CH-1901",
+            "sl-rozaj-biske", "hy-Latn-IT-arevela", "zh-cmn-Hans-CN", "en-a-bbb-x-a-ccc",
+            "de-DE-u-co-phonebk", "x-private", "X-Whatever-12345678", "en-US-x-twain",
+            "i-klingon", "I-KLINGON", "i-default", "en-GB-oed", "EN-gb-OED", "sgn-BE-FR",
+            "art-lojban", "zh-min-nan", "cel-gaulish", "no-bok", "zh-guoyu", "EN-us",
+            // What this app writes, straight from Foundation.
+            Locale(identifier: "es_ES").identifier(.bcp47),
+            Locale(identifier: "zh_Hans_CN").identifier(.bcp47),
+        ]
+        for tag in wellFormed {
+            #expect(tag.wholeMatch(of: pattern) != nil, "\(tag) should be accepted")
+        }
+        let malformed = [
+            "", "e", "en_US", "en-", "-en", "en--US", "x", "x-", "x-toolongsubtag",
+            "toolonglanguage", "123", "en-US-", "i-notreal", "en-a", "en-a-b", "en US",
+        ]
+        for tag in malformed {
+            #expect(tag.wholeMatch(of: pattern) == nil, "\(tag) should be rejected")
+        }
     }
 }

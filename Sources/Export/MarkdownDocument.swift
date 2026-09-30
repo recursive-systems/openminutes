@@ -89,23 +89,52 @@ struct MarkdownDocument {
     }
 
     /// Quotes a YAML scalar only when needed (colons, hashes, quotes, etc.).
+    /// Inside quotes, anything YAML cannot hold literally is escaped, so a
+    /// `ref` of any Unicode string comes back from a parser unchanged.
     static func yamlValue(_ string: String) -> String {
         let needsQuoting = string.isEmpty
             || string.contains(":") || string.contains("#")
             || string.contains("\"") || string.contains("'")
-            || string.contains("\\") || string.contains("\n")
-            || string.contains("\t") || string.contains("\r")
+            || string.contains("\\")
             || string.hasPrefix(" ") || string.hasSuffix(" ")
             || "-[]{},?&*!|>%@`".contains(string.first ?? " ")
+            || string.unicodeScalars.contains(where: needsEscape)
             || resolvesToNonString(string)
         guard needsQuoting else { return string }
-        let escaped = string
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\t", with: "\\t")
-            .replacingOccurrences(of: "\r", with: "\\r")
+        var escaped = ""
+        for scalar in string.unicodeScalars {
+            switch scalar {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\t": escaped += "\\t"
+            case "\r": escaped += "\\r"
+            case _ where needsEscape(scalar):
+                escaped += scalar.value <= 0xFFFF
+                    ? "\\u" + hex(scalar.value, width: 4)
+                    : "\\U" + hex(scalar.value, width: 8)
+            default: escaped.unicodeScalars.append(scalar)
+            }
+        }
         return "\"\(escaped)\""
+    }
+
+    /// Characters that cannot appear literally in a one-line YAML value:
+    /// everything outside YAML 1.2's printable set (C0 and C1 controls, DEL,
+    /// U+FFFE, U+FFFF), line breaks including YAML 1.1's NEL, U+2028 and
+    /// U+2029, and the byte order mark, which YAML excludes from content.
+    static func needsEscape(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x20...0x7E: false
+        case 0x85, 0x2028, 0x2029, 0xFEFF: true
+        case 0xA0...0xD7FF, 0xE000...0xFFFD, 0x10000...0x10FFFF: false
+        default: true
+        }
+    }
+
+    private static func hex(_ value: UInt32, width: Int) -> String {
+        let digits = String(value, radix: 16, uppercase: true)
+        return String(repeating: "0", count: max(0, width - digits.count)) + digits
     }
 
     /// True when a YAML parser would read the unquoted value as something
@@ -145,32 +174,5 @@ struct MarkdownDocument {
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "OpenMinutes \(version) (build \(build))"
-    }
-}
-
-extension MarkdownDocument {
-    /// The document export writes for a recording. One constructor, so the
-    /// real exporter and the test pipeline cannot drift apart on which keys
-    /// a recording carries into its file.
-    init(
-        recording: Recording,
-        audioFileName: String?,
-        device: String = MarkdownDocument.currentDevice(),
-        generator: String = MarkdownDocument.currentGenerator()
-    ) {
-        self.init(
-            id: recording.id.uuidString.lowercased(),
-            title: recording.title,
-            recorded: recording.createdAt,
-            duration: recording.duration,
-            transcript: recording.transcript,
-            summary: recording.summary,
-            audioFileName: audioFileName,
-            device: device,
-            generator: generator,
-            language: recording.transcriptLanguage,
-            speakers: recording.speakerNames,
-            ref: recording.ref
-        )
     }
 }

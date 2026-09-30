@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var importError: String?
     /// Why a record link from another app did not start a recording.
     @State private var linkError: String?
+    @State private var linkStarter = RecordLinkStarter()
     @State private var micPermission = AVAudioApplication.shared.recordPermission
     @State private var searchText = ""
 
@@ -258,27 +259,17 @@ struct ContentView: View {
     }
 
     private func startRecording(from request: RecordRequest) {
-        guard recorder.state == .idle else {
-            // The widget tapped mid-recording just reopens the app. A link
-            // that carried a title or ref is different: dropping it without
-            // a word would leave the caller waiting for a file it will never
-            // get, and applying it to the running recording would file that
-            // recording under something it is not.
-            if !request.isEmpty {
-                linkError = "A recording is already running, so the link from the other app was not used. "
-                    + "Stop this recording, then try again from that app."
-            }
-            return
-        }
         Task {
-            if AVAudioApplication.shared.recordPermission == .undetermined {
-                _ = await AVAudioApplication.requestRecordPermission()
-            }
-            do {
-                try recorder.start(request)
-            } catch {
-                linkError = error.localizedDescription
-            }
+            linkError = await linkStarter.handle(
+                request,
+                isIdle: { recorder.state == .idle },
+                prepare: {
+                    if AVAudioApplication.shared.recordPermission == .undetermined {
+                        _ = await AVAudioApplication.requestRecordPermission()
+                    }
+                },
+                start: { try recorder.start($0) }
+            ) ?? linkError
         }
     }
 

@@ -114,3 +114,111 @@ struct OpenMinutesURLRouteTests {
         #expect(!message.contains("\u{2014}"))
     }
 }
+
+/// Holds `prepare` (the microphone permission prompt) open until released,
+/// so a test can deliver a second link inside that window.
+@MainActor
+private final class Gate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    var isWaiting: Bool { continuation != nil }
+
+    func wait() async {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class FakeLinkRecorder {
+    var idle = true
+    var started: [RecordRequest] = []
+
+    func start(_ request: RecordRequest) {
+        started.append(request)
+        idle = false
+    }
+}
+
+@MainActor
+private func yield(until condition: () -> Bool) async -> Bool {
+    for _ in 0..<10_000 {
+        if condition() { return true }
+        await Task.yield()
+    }
+    return condition()
+}
+
+@MainActor
+@Suite("Record link starts")
+struct RecordLinkStarterTests {
+    @Test func startsWithTheRequest() async {
+        let starter = RecordLinkStarter()
+        var started: [RecordRequest] = []
+        let message = await starter.handle(
+            RecordRequest(title: "Coffee", ref: "abc"),
+            isIdle: { true }, prepare: {}, start: { started.append($0) })
+        #expect(message == nil)
+        #expect(started == [RecordRequest(title: "Coffee", ref: "abc")])
+        #expect(!starter.isStarting)
+    }
+
+    /// Two links while the permission prompt is up: only the first starts,
+    /// and the second says why instead of starting over the first capture.
+    @Test func overlappingLinksStartOnlyOnce() async throws {
+        let starter = RecordLinkStarter()
+        let gate = Gate()
+        let recorder = FakeLinkRecorder()
+
+        let first = Task {
+            await starter.handle(RecordRequest(ref: "first"), isIdle: { recorder.idle },
+                                 prepare: { await gate.wait() }, start: { recorder.start($0) })
+        }
+        #expect(await yield { gate.isWaiting })
+        #expect(starter.isStarting)
+
+        let second = await starter.handle(RecordRequest(ref: "second"), isIdle: { recorder.idle },
+                                          prepare: {}, start: { recorder.start($0) })
+        #expect(second == RecordLinkStarter.busyMessage)
+        // The widget's bare link during the same window is quietly ignored.
+        let bare = await starter.handle(RecordRequest(), isIdle: { recorder.idle },
+                                        prepare: {}, start: { recorder.start($0) })
+        #expect(bare == nil)
+        #expect(recorder.started.isEmpty)
+
+        gate.open()
+        #expect(await first.value == nil)
+        #expect(recorder.started == [RecordRequest(ref: "first")])
+        #expect(!starter.isStarting)
+    }
+
+    /// The user can tap record while the prompt is up. The recorder's state
+    /// is read again after the suspension, not trusted from before it.
+    @Test func recordingStartedDuringPermissionPromptWins() async {
+        let starter = RecordLinkStarter()
+        var idle = true
+        var started: [RecordRequest] = []
+        let message = await starter.handle(
+            RecordRequest(ref: "abc"), isIdle: { idle },
+            prepare: { idle = false }, start: { started.append($0) })
+        #expect(message == RecordLinkStarter.busyMessage)
+        #expect(started.isEmpty)
+        #expect(!starter.isStarting)
+    }
+
+    @Test func startFailureIsReportedAndReleasesTheReservation() async {
+        let starter = RecordLinkStarter()
+        let failed = await starter.handle(
+            RecordRequest(), isIdle: { true }, prepare: {},
+            start: { _ in throw RecorderService.RecorderError.microphoneDenied })
+        #expect(failed == RecorderService.RecorderError.microphoneDenied.errorDescription)
+        #expect(!starter.isStarting)
+
+        var started = 0
+        _ = await starter.handle(RecordRequest(), isIdle: { true }, prepare: {}, start: { _ in started += 1 })
+        #expect(started == 1)
+    }
+}

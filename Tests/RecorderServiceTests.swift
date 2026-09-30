@@ -78,6 +78,21 @@ struct RecorderServiceTests {
         #expect(next.titleNeedsGeneration)
     }
 
+    /// A second start over a live capture must refuse, not replace the
+    /// first recording's file and engine.
+    @Test func startWhileRecordingIsRefused() async throws {
+        let recorder = RecorderService()
+        try recorder.start(RecordRequest(ref: "first"))
+        #expect(throws: RecorderService.RecorderError.alreadyRecording) {
+            try recorder.start(RecordRequest(ref: "second"))
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        let finished = try #require(recorder.stop())
+        defer { try? FileManager.default.removeItem(at: finished.audioURL) }
+        #expect(finished.ref == "first")
+        #expect(finished.duration > 0)
+    }
+
     /// Pause must not end the recording or reset what was captured.
     @Test func pauseAndResumeKeepsOneFile() async throws {
         let recorder = RecorderService()

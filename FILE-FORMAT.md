@@ -77,7 +77,9 @@ require keys beyond these.
 
 Every value above is a YAML string unless its type says otherwise. Writers
 quote a string that a YAML parser would otherwise read as something else
-(`ref: "123"`, not `ref: 123`). Parse the frontmatter with a YAML 1.2 core
+(`ref: "123"`, not `ref: 123`), and inside double quotes they escape any
+character YAML cannot hold literally, such as `\uFFFF` or a line separator.
+Parse the frontmatter with a YAML 1.2 core
 schema loader so `recorded` stays a string; YAML 1.1 loaders turn it into a
 timestamp.
 

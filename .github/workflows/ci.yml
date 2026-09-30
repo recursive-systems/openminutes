@@ -29,6 +29,12 @@ jobs:
             exit 1
           fi
 
+      # The frontmatter is a public contract, and the app's own tests have
+      # no YAML parser. This renders awkward strings with the real writer
+      # and parses them with libyaml (Ruby's Psych, shipped with macOS).
+      - name: YAML round-trip
+        run: Scripts/yaml-roundtrip.sh
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
