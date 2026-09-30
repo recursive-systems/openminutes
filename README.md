@@ -60,17 +60,32 @@ Both parameters are optional, and plain `openminutes://record` just starts
 recording.
 
 - `title` becomes the recording's title, and OpenMinutes does not generate
-  one of its own.
-- `ref` is any value the caller wants back (at most 200 characters). It is
-  written unchanged to the `ref` key of the exported file, next to the
+  one of its own. Spaces at either end are trimmed.
+- `ref` is any value the caller wants back. It is written byte for byte to
+  the `ref` key of the exported file (never trimmed), next to the
   recording's `id`, so the caller can find the recording it asked for when
   the file lands in the folder. OpenMinutes never interprets it.
 
-Percent-encode both values (`+` is a literal plus, not a space). Other
-parameters are ignored, so the link never needs a version. A value that is
-too long, or a link that arrives while a recording is already running, is
-refused with a message on screen rather than cut short or dropped. Nothing
-is sent back to the caller: the file in the folder is the answer.
+What the link accepts:
+
+- Percent-encode both values. `+` is a literal plus, not a space.
+- Each value can be at most 200 Unicode scalars (code points, the unit JSON
+  Schema's `maxLength` counts, so an accented letter written as a letter
+  plus a combining mark counts as two).
+- Control characters (line breaks, tabs, and the rest of Unicode category
+  Cc) are not accepted in either value.
+- An empty value (`title=`) counts as absent, and so does a title of only
+  spaces.
+- If a parameter appears more than once, the first one is used.
+- Other parameters are ignored, so the link never needs a version.
+
+A value that is too long or holds control characters is refused with a
+message on screen, and nothing is recorded. It is never cut short. If a
+recording is already running, plain `openminutes://record` does nothing
+beyond opening the app. A link that carries a `title` or `ref` is refused
+with a message instead, because applying it to the running recording would
+file that recording under something it is not. Nothing is sent back to the
+caller: the file in the folder is the answer.
 
 Any recorder can offer the same by accepting `<its scheme>://record` with
 these two parameters and writing the keys described in the

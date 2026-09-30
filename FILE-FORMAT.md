@@ -88,8 +88,16 @@ timestamp.
 Files written before `id` existed, and files from writers that do not mint
 one, have no stable identifier. A reader that needs one can derive it from
 the app name in `generator` (without its version, which changes with every
-update), `recorded` and `duration`. None of those change when a recording is
-renamed or exported again. If a later export of the same recording adds
+update), the instant in `recorded`, and `duration`. None of those change when
+a recording is renamed or exported again.
+
+Use the instant, not the text. `recorded` is written with the device's UTC
+offset at the time of export, so the same recording exported again after the
+phone changed time zone reads `2026-06-09T14:09:00-05:00` one time and
+`2026-06-09T21:09:00+02:00` the next. Convert it to UTC (for example
+`2026-06-09T19:09:00Z`) before deriving anything from it.
+
+If a later export of the same recording adds
 `id`, keep the derived value as an alias so the two are recognised as one
 recording, not two.
 
